@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: etudeasy-mistral-backend
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        value: etudeasy-d8dc7
+      - key: NODE_ENV
+        value: production
