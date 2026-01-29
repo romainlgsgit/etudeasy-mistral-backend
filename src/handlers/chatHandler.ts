@@ -30,6 +30,17 @@ export async function chatWithMistralHandler(
     });
   }
 
+  // Nettoyer l'historique: enlever tool_calls des messages assistant
+  const cleanedMessages = messages.map(msg => {
+    if (msg.role === 'assistant' && (msg as any).tool_calls) {
+      return {
+        role: msg.role,
+        content: msg.content || '',
+      };
+    }
+    return msg;
+  });
+
   // Rate limiting
   const withinLimit = await checkRateLimit(userId);
   if (!withinLimit) {
@@ -53,7 +64,7 @@ export async function chatWithMistralHandler(
 
     // 3. Appeler Mistral API
     console.log('[Chat] Appel Mistral API');
-    const mistralResponse = await callMistralAPI([systemMessage, ...messages]);
+    const mistralResponse = await callMistralAPI([systemMessage, ...cleanedMessages]);
 
     const assistantMessage = mistralResponse.choices[0].message;
 
@@ -74,7 +85,7 @@ export async function chatWithMistralHandler(
       console.log('[Chat] Deuxième appel Mistral avec résultats tools');
       const finalResponse = await callMistralAPI([
         systemMessage,
-        ...messages,
+        ...cleanedMessages,
         cleanedAssistantMessage,
         ...toolResults,
       ]);
