@@ -41,12 +41,22 @@ export async function chatWithMistralHandler(
     return msg;
   });
 
-  // Rate limiting
-  const withinLimit = await checkRateLimit(userId);
-  if (!withinLimit) {
-    return res.status(429).json({
-      error: 'resource-exhausted',
-      message: 'Limite quotidienne de messages atteinte (50/jour). Réessayez demain.',
+  // Rate limiting - récupérer les infos
+  const rateLimitInfo = await checkRateLimit(userId);
+
+  // Si limite atteinte, retourner un message indiquant le mode hors ligne
+  if (!rateLimitInfo.withinLimit) {
+    console.log(`[Chat] Rate limit atteint pour ${userId}, mode hors ligne activé`);
+    return res.json({
+      message: `Tu as atteint ta limite de 150 messages pour aujourd'hui. Le mode hors ligne est activé automatiquement jusqu'à demain minuit. Tu peux continuer à utiliser l'assistant, mais avec des fonctionnalités réduites.`,
+      success: true,
+      rateLimitReached: true,
+      rateLimitInfo: {
+        messagesUsed: rateLimitInfo.messagesUsed,
+        messagesRemaining: 0,
+        resetAt: rateLimitInfo.resetAt,
+        resetInMs: rateLimitInfo.resetInMs,
+      },
     });
   }
 
@@ -102,6 +112,12 @@ export async function chatWithMistralHandler(
         message: finalMessage.content,
         toolCalls: assistantMessage.tool_calls,
         success: true,
+        rateLimitInfo: {
+          messagesUsed: rateLimitInfo.messagesUsed,
+          messagesRemaining: rateLimitInfo.messagesRemaining,
+          resetAt: rateLimitInfo.resetAt,
+          resetInMs: rateLimitInfo.resetInMs,
+        },
       });
     }
 
@@ -109,6 +125,12 @@ export async function chatWithMistralHandler(
     return res.json({
       message: assistantMessage.content,
       success: true,
+      rateLimitInfo: {
+        messagesUsed: rateLimitInfo.messagesUsed,
+        messagesRemaining: rateLimitInfo.messagesRemaining,
+        resetAt: rateLimitInfo.resetAt,
+        resetInMs: rateLimitInfo.resetInMs,
+      },
     });
   } catch (error: any) {
     console.error('[Chat] Erreur:', error);
@@ -118,6 +140,12 @@ export async function chatWithMistralHandler(
         'Je rencontre une difficulté technique temporaire. Peux-tu reformuler ta demande ?',
       error: error.message,
       success: false,
+      rateLimitInfo: {
+        messagesUsed: rateLimitInfo.messagesUsed,
+        messagesRemaining: rateLimitInfo.messagesRemaining,
+        resetAt: rateLimitInfo.resetAt,
+        resetInMs: rateLimitInfo.resetInMs,
+      },
     });
   }
 }
