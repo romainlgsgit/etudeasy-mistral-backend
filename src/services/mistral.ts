@@ -271,7 +271,7 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
 
   if (includeTools) {
     body.tools = MISTRAL_TOOLS;
-    body.tool_choice = 'any'; // Force l'utilisation d'au moins un tool
+    body.tool_choice = 'auto'; // Laisse l'IA décider quand utiliser les tools
   }
 
   const response = await fetch(MISTRAL_API_URL, {

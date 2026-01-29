@@ -75,10 +75,12 @@ export async function chatWithMistralHandler(
       // Exécuter les tool calls
       const toolResults = await handleToolCalls(assistantMessage.tool_calls, userId);
 
-      // Nettoyer le message assistant : enlever le content si tool_calls est présent
-      const cleanedAssistantMessage = {
-        role: 'assistant',
+      // Nettoyer le message assistant : UNIQUEMENT tool_calls, PAS de content
+      // Mistral API requiert soit content, soit tool_calls, mais PAS les deux
+      const cleanedAssistantMessage: any = {
+        role: 'assistant' as const,
         tool_calls: assistantMessage.tool_calls,
+        // Ne JAMAIS inclure content quand tool_calls est présent
       };
 
       // Deuxième appel à Mistral avec les résultats
