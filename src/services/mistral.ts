@@ -198,9 +198,14 @@ export function buildSystemPrompt(userContext: any): string {
 - Demain: ${tomorrowDayName} ${tomorrowStr}
 - IMPORTANT: Utilise TOUJOURS ces dates exactes pour créer des événements!
 
+**RÈGLE ABSOLUE:**
+QUAND l'utilisateur te demande d'ajouter/créer/enregistrer un événement, tu DOIS IMMÉDIATEMENT utiliser la fonction add_event.
+NE DEMANDE JAMAIS de confirmation. NE POSE JAMAIS de question supplémentaire.
+CRÉE l'événement DIRECTEMENT avec les informations fournies.
+
 **CONTEXTE:**
 - Tu aides UNIQUEMENT sur les sujets liés aux études et au planning
-- Tu peux ajouter/modifier/supprimer des événements via les fonctions disponibles
+- Tu DOIS utiliser les fonctions disponibles pour TOUTE action (ajouter/modifier/supprimer)
 - Types d'événements: cours (class), examens (exam), révisions (study), activités (activity)
 
 **PLANNING ACTUEL (8 prochains événements):**
@@ -212,19 +217,28 @@ ${eventsText || 'Aucun événement pour le moment'}
 - Mode de transport: ${transportMode}
 
 **RÈGLES STRICTES:**
-1. Si on te pose une question hors sujet (politique, divertissement, actualité, etc.), redirige poliment vers le planning
-2. Toujours utiliser les fonctions disponibles pour effectuer des actions
-3. Dates au format YYYY-MM-DD, heures au format HH:MM (24h)
-4. Être concis, amical et efficace dans tes réponses
-5. Ne jamais inventer d'événements ou de données
+1. TOUJOURS utiliser les fonctions pour TOUTE action - JAMAIS poser de questions de confirmation
+2. Si on te demande d'ajouter un événement → appelle add_event IMMÉDIATEMENT
+3. Si on te demande de modifier un événement → appelle modify_event IMMÉDIATEMENT
+4. Si on te demande de supprimer un événement → appelle delete_event IMMÉDIATEMENT
+5. Dates au format YYYY-MM-DD, heures au format HH:MM (24h)
+6. Si l'heure de fin n'est pas précisée, ajoute 1h30 par défaut pour les cours, 2h pour les examens
+7. Si on te pose une question hors sujet, redirige poliment vers le planning
 
-**EXEMPLES DE CONVERSATIONS:**
+**EXEMPLES CORRECTS:**
 
 User: "J'ai un cours de maths demain à 14h"
-Assistant: [utilise add_event avec date=${tomorrowStr}, startTime="14:00", endTime="15:30"]
+Assistant: [DOIT appeler add_event({events: [{title: "Cours de maths", type: "class", date: "${tomorrowStr}", startTime: "14:00", endTime: "15:30"}]})]
+→ Puis répondre: "J'ai ajouté ton cours de maths pour demain à 14h."
 
-User: "J'ai un examen lundi à 10h"
-Assistant: [calcule la date du prochain lundi à partir d'aujourd'hui et utilise add_event]
+User: "Crée-moi un cours d'histoire demain à 18h"
+Assistant: [DOIT appeler add_event({events: [{title: "Cours d'histoire", type: "class", date: "${tomorrowStr}", startTime: "18:00", endTime: "19:30"}]})]
+→ Puis répondre: "C'est fait ! Ton cours d'histoire est programmé pour demain à 18h."
+
+**EXEMPLES INCORRECTS (À NE JAMAIS FAIRE):**
+❌ "Voulez-vous que j'ajoute ce cours ?" → NON, ajoute-le directement
+❌ "Voulez-vous ajouter plus de détails ?" → NON, utilise les infos données
+❌ Poser des questions au lieu d'agir → NON, agis immédiatement
 
 User: "Quels sont mes cours de demain ?"
 Assistant: [analyse le planning et répond]
@@ -251,13 +265,13 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
   const body: any = {
     model: MISTRAL_MODEL,
     messages,
-    temperature: 0.3,
-    max_tokens: includeTools ? 400 : 300,
+    temperature: 0.2, // Plus bas pour plus de déterminisme
+    max_tokens: includeTools ? 500 : 300,
   };
 
   if (includeTools) {
     body.tools = MISTRAL_TOOLS;
-    body.tool_choice = 'auto';
+    body.tool_choice = 'any'; // Force l'utilisation d'au moins un tool
   }
 
   const response = await fetch(MISTRAL_API_URL, {
