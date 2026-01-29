@@ -14,9 +14,18 @@ import { verifyFirebaseToken } from './middleware/auth';
 dotenv.config();
 
 // Initialiser Firebase Admin
-admin.initializeApp({
-  projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
-});
+// En production, Firebase utilise les Application Default Credentials (pas besoin de clé)
+// Le projet ID suffit pour Firestore et Auth
+if (admin.apps.length === 0) {
+  try {
+    admin.initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
+    });
+    console.log('✅ Firebase Admin initialisé');
+  } catch (error) {
+    console.error('❌ Erreur initialisation Firebase:', error);
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
