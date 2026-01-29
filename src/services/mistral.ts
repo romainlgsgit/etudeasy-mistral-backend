@@ -340,7 +340,7 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
   const body: any = {
     model: MISTRAL_MODEL,
     messages,
-    temperature: 0.2, // Plus bas pour plus de déterminisme
+    temperature: 0.5, // Augmenté pour éviter les boucles répétitives
     max_tokens: includeTools ? 500 : 300,
   };
 

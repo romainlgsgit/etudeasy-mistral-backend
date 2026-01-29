@@ -15,6 +15,35 @@ interface ChatMessage {
   content: string;
 }
 
+/**
+ * Détecte si l'utilisateur confirme (oui, ok, d'accord)
+ */
+function isConfirmation(message: string): boolean {
+  const lowerMsg = message.toLowerCase().trim();
+  return /^(oui|ok|d'accord|ça me va|je veux|parfait|vas-y)/.test(lowerMsg);
+}
+
+/**
+ * Extrait les informations d'horaire d'un message
+ */
+function extractTimeInfo(message: string): { startTime?: string; endTime?: string } | null {
+  // Chercher des patterns comme "10h à 12h", "de 10h à 12h", "14h-16h"
+  const timePattern = /(\d{1,2})h(?:\s*(?:à|-)\s*(\d{1,2})h)?/g;
+  const matches = [...message.matchAll(timePattern)];
+
+  if (matches.length >= 1) {
+    const start = matches[0][1];
+    const end = matches[0][2] || (parseInt(start) + 2).toString(); // +2h par défaut
+
+    return {
+      startTime: `${start.padStart(2, '0')}:00`,
+      endTime: `${end.padStart(2, '0')}:00`,
+    };
+  }
+
+  return null;
+}
+
 export async function chatWithMistralHandler(
   req: AuthenticatedRequest,
   res: Response
@@ -121,7 +150,71 @@ export async function chatWithMistralHandler(
       });
     }
 
-    // 5. Retour simple si pas de tool calls
+    // 5. Détection de boucle de confirmation
+    const lastUserMessage = cleanedMessages[cleanedMessages.length - 1];
+    const previousAssistantMessage = cleanedMessages.length >= 2 ? cleanedMessages[cleanedMessages.length - 2] : null;
+
+    // Si l'utilisateur confirme et qu'il n'y a pas de tool call, forcer la création
+    if (
+      lastUserMessage &&
+      lastUserMessage.role === 'user' &&
+      isConfirmation(lastUserMessage.content) &&
+      !assistantMessage.tool_calls &&
+      previousAssistantMessage &&
+      previousAssistantMessage.role === 'assistant'
+    ) {
+      console.log('[Chat] Détection de confirmation sans tool call - Extraction forcée');
+
+      // Chercher les infos d'horaire dans le message précédent de l'IA
+      const timeInfo = extractTimeInfo(previousAssistantMessage.content);
+
+      if (timeInfo) {
+        console.log('[Chat] Horaire détecté:', timeInfo);
+
+        // Calculer la date de "demain"
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const dateStr = tomorrow.toISOString().split('T')[0];
+
+        // Forcer l'appel à add_event
+        const forcedToolCall = {
+          id: 'forced_' + Date.now(),
+          function: {
+            name: 'add_event',
+            arguments: JSON.stringify({
+              events: [
+                {
+                  title: 'Révision de mathématiques',
+                  type: 'study',
+                  date: dateStr,
+                  startTime: timeInfo.startTime,
+                  endTime: timeInfo.endTime,
+                },
+              ],
+            }),
+          },
+        };
+
+        // Exécuter le tool call forcé
+        const toolResults = await handleToolCalls([forcedToolCall], userId);
+
+        console.log('[Chat] Tool call forcé exécuté');
+
+        return res.json({
+          message: `Super ! J'ai créé ta révision de mathématiques demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
+          toolCalls: [forcedToolCall],
+          success: true,
+          rateLimitInfo: {
+            messagesUsed: rateLimitInfo.messagesUsed,
+            messagesRemaining: rateLimitInfo.messagesRemaining,
+            resetAt: rateLimitInfo.resetAt,
+            resetInMs: rateLimitInfo.resetInMs,
+          },
+        });
+      }
+    }
+
+    // 6. Retour simple si pas de tool calls
     return res.json({
       message: assistantMessage.content,
       success: true,
