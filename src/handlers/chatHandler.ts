@@ -16,11 +16,19 @@ interface ChatMessage {
 }
 
 /**
- * Détecte si l'utilisateur confirme (oui, ok, d'accord)
+ * Détecte si l'utilisateur confirme (oui, ok, d'accord) ou demande une action
  */
 function isConfirmation(message: string): boolean {
   const lowerMsg = message.toLowerCase().trim();
-  return /^(oui|ok|d'accord|ça me va|je veux|parfait|vas-y)/.test(lowerMsg);
+  return /^(oui|ok|d'accord|ça me va|je veux|parfait|vas-y|fais-le|fais le|place le|choisis|tu l'as fait|fait)/.test(lowerMsg);
+}
+
+/**
+ * Détecte si le message demande un placement automatique
+ */
+function isAutoPlacementRequest(message: string): boolean {
+  const lowerMsg = message.toLowerCase();
+  return /place.{0,10}moi|trouve.{0,10}créneau|choisis|comme tu (veux|préfères)/.test(lowerMsg);
 }
 
 /**
@@ -150,23 +158,42 @@ export async function chatWithMistralHandler(
       });
     }
 
-    // 5. Détection de boucle de confirmation
+    // 5. Détection intelligente et création forcée
     const lastUserMessage = cleanedMessages[cleanedMessages.length - 1];
     const previousAssistantMessage = cleanedMessages.length >= 2 ? cleanedMessages[cleanedMessages.length - 2] : null;
 
-    // Si l'utilisateur confirme et qu'il n'y a pas de tool call, forcer la création
+    // CAS 1: Utilisateur confirme OU demande placement automatique
     if (
       lastUserMessage &&
       lastUserMessage.role === 'user' &&
-      isConfirmation(lastUserMessage.content) &&
-      !assistantMessage.tool_calls &&
-      previousAssistantMessage &&
-      previousAssistantMessage.role === 'assistant'
+      (isConfirmation(lastUserMessage.content) || isAutoPlacementRequest(lastUserMessage.content)) &&
+      !assistantMessage.tool_calls
     ) {
-      console.log('[Chat] Détection de confirmation sans tool call - Extraction forcée');
+      console.log('[Chat] Détection action sans tool call - Extraction forcée');
 
-      // Chercher les infos d'horaire dans le message précédent de l'IA
-      const timeInfo = extractTimeInfo(previousAssistantMessage.content);
+      // Chercher les infos d'horaire dans le message précédent de l'IA OU dans les messages utilisateur
+      let timeInfo = null;
+      let searchInMessages = [previousAssistantMessage?.content, lastUserMessage.content];
+
+      // Chercher aussi dans les 3 derniers messages
+      for (let i = cleanedMessages.length - 3; i < cleanedMessages.length; i++) {
+        if (i >= 0) {
+          searchInMessages.push(cleanedMessages[i].content);
+        }
+      }
+
+      for (const msg of searchInMessages) {
+        if (msg) {
+          timeInfo = extractTimeInfo(msg);
+          if (timeInfo) break;
+        }
+      }
+
+      // Si pas d'horaire trouvé mais demande de placement auto, suggérer 10h-12h par défaut
+      if (!timeInfo && isAutoPlacementRequest(lastUserMessage.content)) {
+        timeInfo = { startTime: '10:00', endTime: '12:00' };
+        console.log('[Chat] Placement auto avec horaire par défaut 10h-12h');
+      }
 
       if (timeInfo) {
         console.log('[Chat] Horaire détecté:', timeInfo);
@@ -196,12 +223,12 @@ export async function chatWithMistralHandler(
         };
 
         // Exécuter le tool call forcé
-        const toolResults = await handleToolCalls([forcedToolCall], userId);
+        await handleToolCalls([forcedToolCall], userId);
 
         console.log('[Chat] Tool call forcé exécuté');
 
         return res.json({
-          message: `Super ! J'ai créé ta révision de mathématiques demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
+          message: `C'est fait ! Révision de maths demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
           toolCalls: [forcedToolCall],
           success: true,
           rateLimitInfo: {
