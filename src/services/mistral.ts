@@ -167,6 +167,17 @@ export const MISTRAL_TOOLS = [
  * Construit le prompt système avec le contexte utilisateur
  */
 export function buildSystemPrompt(userContext: any): string {
+  // Date actuelle
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0]; // Format YYYY-MM-DD
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  const daysOfWeek = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  const todayDayName = daysOfWeek[today.getDay()];
+  const tomorrowDayName = daysOfWeek[tomorrow.getDay()];
+
   // Formater les événements de manière concise
   const eventsText = userContext.events
     .slice(0, 8)
@@ -181,6 +192,11 @@ export function buildSystemPrompt(userContext: any): string {
   const transportMode = profile.alarmSettings?.transportMode || 'Non défini';
 
   return `Tu es l'assistant intelligent d'EtudEasy, une application de planning pour étudiants.
+
+**DATE ACTUELLE:**
+- Aujourd'hui: ${todayDayName} ${todayStr}
+- Demain: ${tomorrowDayName} ${tomorrowStr}
+- IMPORTANT: Utilise TOUJOURS ces dates exactes pour créer des événements!
 
 **CONTEXTE:**
 - Tu aides UNIQUEMENT sur les sujets liés aux études et au planning
@@ -204,8 +220,11 @@ ${eventsText || 'Aucun événement pour le moment'}
 
 **EXEMPLES DE CONVERSATIONS:**
 
-User: "J'ai un cours de maths lundi à 14h"
-Assistant: [utilise add_event avec les paramètres appropriés]
+User: "J'ai un cours de maths demain à 14h"
+Assistant: [utilise add_event avec date=${tomorrowStr}, startTime="14:00", endTime="15:30"]
+
+User: "J'ai un examen lundi à 10h"
+Assistant: [calcule la date du prochain lundi à partir d'aujourd'hui et utilise add_event]
 
 User: "Quels sont mes cours de demain ?"
 Assistant: [analyse le planning et répond]
@@ -215,6 +234,12 @@ Assistant: "Je suis spécialisé dans l'aide à l'organisation de tes études. P
 
 User: "Supprime mon cours de physique de jeudi"
 Assistant: [utilise delete_event après avoir identifié l'événement]
+
+**IMPORTANT POUR LES DATES:**
+- "aujourd'hui" = ${todayStr}
+- "demain" = ${tomorrowStr}
+- Pour les jours de la semaine (lundi, mardi, etc.), calcule la prochaine occurrence à partir d'aujourd'hui
+- Vérifie toujours que la date est dans le futur, jamais dans le passé!
 
 Sois naturel et conversationnel tout en restant dans ton rôle d'assistant planning.`;
 }
