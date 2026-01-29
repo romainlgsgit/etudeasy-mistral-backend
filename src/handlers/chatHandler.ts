@@ -64,12 +64,18 @@ export async function chatWithMistralHandler(
       // Exécuter les tool calls
       const toolResults = await handleToolCalls(assistantMessage.tool_calls, userId);
 
+      // Nettoyer le message assistant : enlever le content si tool_calls est présent
+      const cleanedAssistantMessage = {
+        role: 'assistant',
+        tool_calls: assistantMessage.tool_calls,
+      };
+
       // Deuxième appel à Mistral avec les résultats
       console.log('[Chat] Deuxième appel Mistral avec résultats tools');
       const finalResponse = await callMistralAPI([
         systemMessage,
         ...messages,
-        assistantMessage,
+        cleanedAssistantMessage,
         ...toolResults,
       ]);
 
