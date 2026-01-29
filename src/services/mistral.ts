@@ -161,6 +161,94 @@ export const MISTRAL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'request_missing_info',
+      description: 'Demande des informations manquantes à l\'utilisateur pour créer un événement',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventDraft: {
+            type: 'object',
+            description: 'Informations déjà fournies par l\'utilisateur',
+            properties: {
+              title: { type: 'string' },
+              type: { type: 'string', enum: ['class', 'exam', 'study', 'activity'] },
+              date: { type: 'string' },
+              startTime: { type: 'string' },
+              endTime: { type: 'string' },
+              location: { type: 'string' },
+              category: { type: 'string' },
+            },
+          },
+          missingFields: {
+            type: 'array',
+            description: 'Liste des champs manquants à demander',
+            items: {
+              type: 'string',
+              enum: ['date', 'startTime', 'endTime', 'location', 'address', 'category', 'professor'],
+            },
+          },
+          question: {
+            type: 'string',
+            description: 'La question à poser à l\'utilisateur pour obtenir les infos manquantes',
+          },
+        },
+        required: ['eventDraft', 'missingFields', 'question'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'suggest_optimal_time',
+      description: 'Suggère un horaire optimal pour placer un événement en fonction du planning existant',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventInfo: {
+            type: 'object',
+            description: 'Informations sur l\'événement à placer',
+            properties: {
+              title: { type: 'string' },
+              type: { type: 'string', enum: ['class', 'exam', 'study', 'activity'] },
+              date: { type: 'string', description: 'Date préférée (YYYY-MM-DD), optionnel' },
+              duration: { type: 'number', description: 'Durée en minutes (ex: 90 pour 1h30)' },
+              preferredTimeSlots: {
+                type: 'array',
+                description: 'Créneaux horaires préférés',
+                items: {
+                  type: 'string',
+                  enum: ['morning', 'afternoon', 'evening'],
+                },
+              },
+            },
+            required: ['title', 'type'],
+          },
+          constraints: {
+            type: 'object',
+            description: 'Contraintes de placement',
+            properties: {
+              minBreakBetweenEvents: {
+                type: 'number',
+                description: 'Pause minimum en minutes entre deux événements (par défaut: 15)',
+              },
+              avoidWeekends: {
+                type: 'boolean',
+                description: 'Éviter les weekends (par défaut: false)',
+              },
+              preferEarlyMorning: {
+                type: 'boolean',
+                description: 'Préférer les matinées (par défaut: false)',
+              },
+            },
+          },
+        },
+        required: ['eventInfo'],
+      },
+    },
+  },
 ];
 
 /**
@@ -210,21 +298,33 @@ Tu DOIS utiliser add_event() UNIQUEMENT si le message contient :
 
 **SI CES 3 INFOS SONT PRÉSENTES → CRÉE L'ÉVÉNEMENT IMMÉDIATEMENT**
 
+**SI INFOS MANQUANTES (pas d'heure OU pas de date) :**
+1. Si l'utilisateur veut que TU choisisses l'horaire → suggest_optimal_time()
+2. Sinon → request_missing_info() pour demander les infos
+
 **SINON → RÉPONDS NORMALEMENT SANS TOOL**
 
 ═════════════════════════════════════════════════════════════
 
-**🔍 EXEMPLES - QUAND UTILISER add_event() :**
+**🔍 EXEMPLES - QUAND UTILISER QUEL TOOL :**
 
-✅ "Cours de maths demain 14h" → OUI, 3 infos présentes → CRÉER
-✅ "Tennis mercredi 18h" → OUI, 3 infos présentes → CRÉER
-✅ "Examen physique lundi 10h" → OUI, 3 infos présentes → CRÉER
+✅ "Cours de maths demain 14h" → add_event() (3 infos présentes)
+✅ "Tennis mercredi 18h" → add_event() (3 infos présentes)
+✅ "Examen physique lundi 10h" → add_event() (3 infos présentes)
 
-❌ "Bonjour" → NON, aucune info → RÉPONDRE normalement
-❌ "Coucou" → NON, aucune info → RÉPONDRE normalement
-❌ "Comment ça va ?" → NON, aucune info → RÉPONDRE normalement
-❌ "Quels sont mes cours ?" → NON, c'est une question → Utiliser search_events
-❌ "J'ai cours demain" → NON, manque l'heure → DEMANDER l'heure
+🤔 "J'ai cours demain" → request_missing_info() (manque l'heure)
+🤔 "Tennis ce soir" → request_missing_info() (manque l'heure précise)
+🤔 "Révision de maths lundi" → request_missing_info() (manque l'heure)
+
+🧠 "Demain j'aimerais réviser mon exam de maths, place le moi" → suggest_optimal_time()
+🧠 "Je veux faire du sport cette semaine, trouve moi un créneau" → suggest_optimal_time()
+🧠 "Place moi une session de révision pour vendredi" → suggest_optimal_time()
+
+📍 Après création avec add_event(), si pas de LIEU/ADRESSE → request_missing_info()
+
+❌ "Bonjour" → RÉPONDRE normalement
+❌ "Comment ça va ?" → RÉPONDRE normalement
+❌ "Quels sont mes cours ?" → search_events()
 
 ═════════════════════════════════════════════════════════════
 
@@ -242,7 +342,43 @@ Tu DOIS utiliser add_event() UNIQUEMENT si le message contient :
 - NE PAS demander confirmation avant de créer
 - NE PAS inventer les infos manquantes (prof, lieu)
 - Demander les infos optionnelles APRÈS création
-- Pour salutations simples → AUCUN tool, réponse directe`;
+- Pour salutations simples → AUCUN tool, réponse directe
+
+═════════════════════════════════════════════════════════════
+
+**🔄 GESTION DES RÉPONSES UTILISATEUR :**
+
+**Après suggest_optimal_time() :**
+- Tu reçois 1-3 suggestions de créneaux
+- Présente-les de façon claire et numérotée
+- Quand l'utilisateur choisit (ex: "le 1", "le premier", "mercredi matin") → add_event()
+- Si l'utilisateur refuse tout → Propose d'autres options ou demande ses préférences
+
+**Après request_missing_info() :**
+- L'utilisateur répond avec l'info manquante
+- Combine avec eventDraft pour créer l'événement → add_event()
+- Si plusieurs infos manquent, demande-les UNE par UNE
+
+**Demande de LIEU/ADRESSE après création :**
+- Toujours demander SÉPARÉMENT (pas ensemble)
+- D'abord le lieu (court): "Où aura lieu ce cours ?" → "Salle A204"
+- Puis l'adresse (si pertinent): "Tu veux ajouter l'adresse complète pour le GPS ?"
+- Utiliser modify_event() pour ajouter ces infos
+
+**EXEMPLES:**
+👤 "Place moi une révision de maths demain"
+🤖 suggest_optimal_time() → "J'ai trouvé 3 créneaux:
+   1. Demain matin à 9h00
+   2. Demain après-midi à 14h30
+   3. Demain soir à 18h00
+   Lequel tu préfères ?"
+👤 "Le 2"
+🤖 add_event() avec date=demain, startTime=14:30
+
+👤 "J'ai un exam de physique lundi"
+🤖 request_missing_info() → "À quelle heure est ton examen de physique lundi ?"
+👤 "10h"
+🤖 add_event() avec title="Examen de physique", date=lundi, startTime=10:00`;
 }
 
 /**

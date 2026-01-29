@@ -29,6 +29,143 @@ function getEventTypeColor(type: string): string {
 }
 
 /**
+ * Convertit une heure "HH:MM" en minutes depuis minuit
+ */
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Convertit des minutes depuis minuit en format "HH:MM"
+ */
+function minutesToTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Trouve un créneau horaire optimal dans le planning de l'utilisateur
+ */
+async function findOptimalTimeSlot(
+  userId: string,
+  eventInfo: any,
+  constraints: any = {}
+): Promise<any> {
+  const db = admin.firestore();
+
+  // Paramètres par défaut
+  const duration = eventInfo.duration || 90; // 90 minutes par défaut
+  const minBreak = constraints.minBreakBetweenEvents || 15;
+  const avoidWeekends = constraints.avoidWeekends || false;
+  const preferEarlyMorning = constraints.preferEarlyMorning || false;
+
+  // Date de départ : soit celle spécifiée, soit demain
+  let searchDate: Date;
+  if (eventInfo.date) {
+    searchDate = new Date(eventInfo.date);
+  } else {
+    searchDate = new Date();
+    searchDate.setDate(searchDate.getDate() + 1); // Demain
+  }
+
+  // Chercher sur 7 jours maximum
+  const suggestions: any[] = [];
+
+  for (let i = 0; i < 7 && suggestions.length < 3; i++) {
+    const currentDate = new Date(searchDate);
+    currentDate.setDate(currentDate.getDate() + i);
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const dayOfWeek = currentDate.getDay();
+
+    // Skip weekends si demandé
+    if (avoidWeekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
+      continue;
+    }
+
+    // Récupérer tous les événements de cette date
+    const eventsSnapshot = await db
+      .collection('scheduleEvents')
+      .where('userId', '==', userId)
+      .where('date', '==', dateStr)
+      .orderBy('startTime', 'asc')
+      .get();
+
+    const dayEvents = eventsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Définir les créneaux possibles selon les préférences
+    const preferredSlots = eventInfo.preferredTimeSlots || ['morning', 'afternoon', 'evening'];
+    const timeSlots: { start: number; end: number; label: string; priority: number }[] = [];
+
+    if (preferredSlots.includes('morning')) {
+      timeSlots.push({ start: 8 * 60, end: 12 * 60, label: 'matin', priority: preferEarlyMorning ? 3 : 2 });
+    }
+    if (preferredSlots.includes('afternoon')) {
+      timeSlots.push({ start: 13 * 60, end: 18 * 60, label: 'après-midi', priority: 2 });
+    }
+    if (preferredSlots.includes('evening')) {
+      timeSlots.push({ start: 18 * 60, end: 21 * 60, label: 'soir', priority: 1 });
+    }
+
+    // Chercher un créneau libre dans chaque slot
+    for (const slot of timeSlots) {
+      let proposedStart = slot.start;
+      let foundSlot = false;
+
+      while (proposedStart + duration <= slot.end && !foundSlot) {
+        const proposedEnd = proposedStart + duration;
+
+        // Vérifier qu'il n'y a pas de conflit avec les événements existants
+        let hasConflict = false;
+
+        for (const event of dayEvents) {
+          const eventStart = timeToMinutes((event as any).startTime);
+          const eventEnd = timeToMinutes((event as any).endTime);
+
+          // Vérifier chevauchement + pause minimum
+          if (
+            (proposedStart >= eventStart - minBreak && proposedStart < eventEnd + minBreak) ||
+            (proposedEnd > eventStart - minBreak && proposedEnd <= eventEnd + minBreak) ||
+            (proposedStart <= eventStart && proposedEnd >= eventEnd)
+          ) {
+            hasConflict = true;
+            // Sauter après cet événement
+            proposedStart = eventEnd + minBreak;
+            break;
+          }
+        }
+
+        if (!hasConflict && proposedStart + duration <= slot.end) {
+          // Créneau trouvé !
+          suggestions.push({
+            date: dateStr,
+            startTime: minutesToTime(proposedStart),
+            endTime: minutesToTime(proposedEnd),
+            dayName: ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][dayOfWeek],
+            timeOfDay: slot.label,
+            priority: slot.priority,
+            reason: `Créneau libre de ${duration} minutes le ${slot.label}`,
+          });
+          foundSlot = true;
+        }
+      }
+    }
+  }
+
+  // Trier par priorité (préférences utilisateur)
+  suggestions.sort((a, b) => b.priority - a.priority);
+
+  return {
+    suggestions: suggestions.slice(0, 3),
+    eventInfo,
+  };
+}
+
+/**
  * Gère l'exécution des tool calls de Mistral
  */
 export async function handleToolCalls(
@@ -362,6 +499,60 @@ export async function handleToolCalls(
               recommendations,
             }),
           });
+          break;
+        }
+
+        case 'request_missing_info': {
+          const { eventDraft, missingFields, question } = args;
+
+          // Sauvegarder le brouillon d'événement pour référence future
+          // L'utilisateur répondra dans le prochain message et l'IA pourra créer l'événement
+          results.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: name,
+            content: JSON.stringify({
+              success: true,
+              action: 'awaiting_user_input',
+              eventDraft,
+              missingFields,
+              question,
+              message: 'Demande d\'informations envoyée à l\'utilisateur',
+            }),
+          });
+          break;
+        }
+
+        case 'suggest_optimal_time': {
+          const { eventInfo, constraints } = args;
+
+          // Trouver les meilleurs créneaux
+          const optimal = await findOptimalTimeSlot(userId, eventInfo, constraints || {});
+
+          if (optimal.suggestions.length === 0) {
+            results.push({
+              tool_call_id: toolCall.id,
+              role: 'tool',
+              name: name,
+              content: JSON.stringify({
+                success: false,
+                message: 'Aucun créneau disponible trouvé dans les prochains jours',
+                eventInfo,
+              }),
+            });
+          } else {
+            results.push({
+              tool_call_id: toolCall.id,
+              role: 'tool',
+              name: name,
+              content: JSON.stringify({
+                success: true,
+                suggestions: optimal.suggestions,
+                eventInfo,
+                message: `${optimal.suggestions.length} créneau(x) optimal(aux) trouvé(s)`,
+              }),
+            });
+          }
           break;
         }
 
