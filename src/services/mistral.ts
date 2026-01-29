@@ -4,7 +4,7 @@
 
 export const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 
-// Choix du modèle - mistral-small-latest pour meilleur function calling
+// Choix du modèle - mistral-small-latest (meilleur function calling)
 export const MISTRAL_MODEL = 'mistral-small-latest';
 
 // Clé API depuis les variables d'environnement
