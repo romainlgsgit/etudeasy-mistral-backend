@@ -5,7 +5,7 @@
 export const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 
 // Choix du modèle (optimisé pour budget limité)
-export const MISTRAL_MODEL = 'mistral-nemo-latest'; // ou 'mistral-small-latest' si besoin
+export const MISTRAL_MODEL = 'open-mistral-nemo'; // ou 'mistral-small-latest' si besoin
 
 // Clé API depuis les variables d'environnement
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
