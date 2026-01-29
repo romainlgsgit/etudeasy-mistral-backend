@@ -4,7 +4,7 @@
 
 import * as admin from 'firebase-admin';
 
-const DAILY_MESSAGE_LIMIT = 50;
+const DAILY_MESSAGE_LIMIT = 150;
 
 /**
  * Vérifie et incrémente le compteur de rate limiting
