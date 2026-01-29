@@ -84,13 +84,17 @@ export async function chatWithMistralHandler(
       };
 
       // Deuxième appel à Mistral avec les résultats
+      // IMPORTANT: includeTools=false car on veut juste une réponse textuelle
       console.log('[Chat] Deuxième appel Mistral avec résultats tools');
-      const finalResponse = await callMistralAPI([
-        systemMessage,
-        ...cleanedMessages,
-        cleanedAssistantMessage,
-        ...toolResults,
-      ]);
+      const finalResponse = await callMistralAPI(
+        [
+          systemMessage,
+          ...cleanedMessages,
+          cleanedAssistantMessage,
+          ...toolResults,
+        ],
+        false // Désactiver les tools pour éviter content + tool_calls
+      );
 
       const finalMessage = finalResponse.choices[0].message;
 
