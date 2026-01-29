@@ -13,17 +13,27 @@ import { verifyFirebaseToken } from './middleware/auth';
 // Charger les variables d'environnement
 dotenv.config();
 
-// Initialiser Firebase Admin
-// En production, Firebase utilise les Application Default Credentials (pas besoin de clé)
-// Le projet ID suffit pour Firestore et Auth
+// Initialiser Firebase Admin avec credentials
 if (admin.apps.length === 0) {
   try {
-    admin.initializeApp({
-      projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
-    });
-    console.log('✅ Firebase Admin initialisé');
+    // En production (Render), utilise les credentials depuis env variable
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+      const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
+      });
+      console.log('✅ Firebase Admin initialisé avec service account');
+    } else {
+      // En local, essaie sans credentials (Application Default Credentials)
+      admin.initializeApp({
+        projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
+      });
+      console.log('✅ Firebase Admin initialisé (mode local)');
+    }
   } catch (error) {
     console.error('❌ Erreur initialisation Firebase:', error);
+    process.exit(1);
   }
 }
 
