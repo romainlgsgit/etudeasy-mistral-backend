@@ -137,6 +137,46 @@ export async function chatWithMistralHandler(
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       console.log(`[Chat] ${assistantMessage.tool_calls.length} tool call(s) à exécuter`);
 
+      // CORRECTION: Forcer la bonne date pour auto_place_event si Mistral se trompe
+      assistantMessage.tool_calls = assistantMessage.tool_calls.map((tc: any) => {
+        if (tc.function?.name === 'auto_place_event') {
+          try {
+            const args = JSON.parse(tc.function.arguments);
+            const userMessage = lastUserMessage.content.toLowerCase();
+
+            // Extraire le jour mentionné dans le message utilisateur
+            const dayMatch = userMessage.match(/(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)/);
+
+            if (dayMatch && args.preferences?.targetDate) {
+              const mentionedDay = dayMatch[1];
+
+              // Calculer les dates des 7 prochains jours
+              const today = new Date();
+              const daysOfWeek = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+              const correctDates: Record<string, string> = {};
+
+              for (let i = 0; i < 7; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() + i);
+                const dayName = daysOfWeek[date.getDay()];
+                correctDates[dayName] = date.toISOString().split('T')[0];
+              }
+
+              const correctDate = correctDates[mentionedDay];
+
+              if (correctDate && correctDate !== args.preferences.targetDate) {
+                console.log(`[Chat] ⚠️ Correction date: "${mentionedDay}" → ${args.preferences.targetDate} CORRIGÉ en ${correctDate}`);
+                args.preferences.targetDate = correctDate;
+                tc.function.arguments = JSON.stringify(args);
+              }
+            }
+          } catch (e) {
+            console.error('[Chat] Erreur correction date:', e);
+          }
+        }
+        return tc;
+      });
+
       // Exécuter les tool calls
       const toolResults = await handleToolCalls(assistantMessage.tool_calls, userId);
 
