@@ -641,6 +641,41 @@ export async function handleToolCalls(
           break;
         }
 
+        case 'propose_organization': {
+          const { userRequest, proposals, summary } = args;
+
+          console.log('[Tools] propose_organization appelé avec:', { userId, userRequest, proposals: proposals?.length });
+
+          // Sauvegarder la proposition dans Firestore pour référence
+          // L'utilisateur pourra valider ou rejeter
+          const proposalDoc = {
+            userId,
+            userRequest,
+            proposals,
+            summary,
+            status: 'pending', // pending | approved | rejected
+            createdAt: new Date().toISOString(),
+          };
+
+          const docRef = await db.collection('planningProposals').add(proposalDoc);
+
+          console.log('[Tools] Proposition sauvegardée:', docRef.id);
+
+          // Retourner la proposition formatée
+          results.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: name,
+            content: JSON.stringify({
+              success: true,
+              proposalId: docRef.id,
+              proposalCount: proposals.length,
+              message: 'Proposition d\'organisation créée avec succès',
+            }),
+          });
+          break;
+        }
+
         default:
           results.push({
             tool_call_id: toolCall.id,

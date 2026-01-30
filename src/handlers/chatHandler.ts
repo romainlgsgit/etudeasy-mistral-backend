@@ -9,6 +9,7 @@ import { getUserContext } from '../services/context';
 import { buildSystemPrompt, callMistralAPI } from '../services/mistral';
 import { handleToolCalls } from '../services/tools';
 import { checkRateLimit } from '../services/rateLimit';
+import { analyzePlanningForUser, isOrganizationRequest } from '../services/planningAnalysis';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -98,9 +99,26 @@ export async function chatWithMistralHandler(
   }
 
   try {
+    // 0. Récupérer le dernier message utilisateur (utilisé plusieurs fois)
+    const lastUserMessage = cleanedMessages[cleanedMessages.length - 1];
+
     // 1. Construire le contexte utilisateur
     console.log(`[Chat] Construction contexte pour ${userId}`);
-    const userContext = await getUserContext(userId);
+    let userContext = await getUserContext(userId);
+
+    // 1.5. Détecter si c'est une demande d'organisation et analyser le planning
+    if (lastUserMessage && lastUserMessage.role === 'user' && isOrganizationRequest(lastUserMessage.content)) {
+      console.log('[Chat] Détection demande d\'organisation - Analyse du planning');
+
+      const planningAnalysis = await analyzePlanningForUser(userId);
+      if (planningAnalysis) {
+        userContext = {
+          ...userContext,
+          planningAnalysis,
+        };
+        console.log('[Chat] Analyse de planning ajoutée au contexte');
+      }
+    }
 
     // 2. Préparer le prompt système
     const systemPrompt = buildSystemPrompt(userContext);
@@ -159,7 +177,6 @@ export async function chatWithMistralHandler(
     }
 
     // 5. Détection intelligente et création forcée
-    const lastUserMessage = cleanedMessages[cleanedMessages.length - 1];
     const previousAssistantMessage = cleanedMessages.length >= 2 ? cleanedMessages[cleanedMessages.length - 2] : null;
 
     // CAS 1: Utilisateur confirme OU demande placement automatique

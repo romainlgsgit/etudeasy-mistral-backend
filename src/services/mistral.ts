@@ -249,6 +249,65 @@ export const MISTRAL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_organization',
+      description: 'OUTIL PRINCIPAL : Propose une organisation de tâches/activités basée sur les créneaux disponibles fournis par le système. Cet outil ne modifie JAMAIS le planning directement.',
+      parameters: {
+        type: 'object',
+        properties: {
+          userRequest: {
+            type: 'string',
+            description: 'Demande originale de l\'utilisateur (ex: "aide-moi à organiser mes révisions")',
+          },
+          proposals: {
+            type: 'array',
+            description: 'Liste des propositions d\'organisation',
+            items: {
+              type: 'object',
+              properties: {
+                slotDay: {
+                  type: 'string',
+                  description: 'Jour du créneau (ex: "Lundi")',
+                },
+                slotStart: {
+                  type: 'string',
+                  description: 'Heure de début du créneau (HH:MM)',
+                },
+                slotEnd: {
+                  type: 'string',
+                  description: 'Heure de fin du créneau (HH:MM)',
+                },
+                activityType: {
+                  type: 'string',
+                  description: 'Type d\'activité proposé (révision, travail perso, sport, repos, etc.)',
+                },
+                activityTitle: {
+                  type: 'string',
+                  description: 'Titre suggéré pour l\'activité',
+                },
+                duration: {
+                  type: 'number',
+                  description: 'Durée suggérée en minutes',
+                },
+                reason: {
+                  type: 'string',
+                  description: 'Explication du choix de ce créneau et cette activité',
+                },
+              },
+              required: ['slotDay', 'slotStart', 'slotEnd', 'activityType', 'activityTitle', 'duration', 'reason'],
+            },
+          },
+          summary: {
+            type: 'string',
+            description: 'Résumé général de l\'organisation proposée',
+          },
+        },
+        required: ['userRequest', 'proposals', 'summary'],
+      },
+    },
+  },
 ];
 
 /**
@@ -266,7 +325,86 @@ export function buildSystemPrompt(userContext: any): string {
   const todayDayName = daysOfWeek[today.getDay()];
   const tomorrowDayName = daysOfWeek[tomorrow.getDay()];
 
-  // Formater les événements de manière concise
+  // Déterminer si on a une analyse de planning disponible
+  const hasAnalysis = userContext.planningAnalysis && userContext.planningAnalysis.availableSlots;
+
+  // Mode 1 : ORGANISATION & PLANIFICATION (avec analyse)
+  if (hasAnalysis) {
+    const analysis = userContext.planningAnalysis;
+    const slots = analysis.availableSlots?.availableSlotsFormatted || [];
+    const criticalInfo = analysis.availableSlots?.criticalInfo || [];
+    const summary = analysis.availableSlots?.summary || '';
+
+    // Formater les créneaux disponibles
+    const slotsText = slots
+      .slice(0, 10)
+      .map((s: any) => `  • ${s.day} ${s.start}-${s.end} (${s.duration}min, qualité: ${s.quality})`)
+      .join('\n');
+
+    return `Tu es un assistant bienveillant d'organisation pour un étudiant.
+
+🚨 **RÈGLE FONDAMENTALE** 🚨
+Tu n'as PAS le droit de modifier directement son planning ni de créer, supprimer ou déplacer des événements.
+
+═══════════════════════════════════════════════════════════
+
+**CONTEXTE :**
+Date: ${todayDayName} ${todayStr}
+
+${summary}
+
+**Informations critiques :**
+${criticalInfo.map((info: string) => `  ${info}`).join('\n')}
+
+**Créneaux disponibles validés :**
+${slotsText || '  Aucun créneau disponible'}
+
+═══════════════════════════════════════════════════════════
+
+**TON RÔLE :**
+
+1. **ANALYSER** la demande de l'utilisateur
+   Exemples : "Aide-moi à mieux organiser mes révisions", "Planifier mes tâches de la semaine", "J'ai trop de choses à faire"
+
+2. **PROPOSER** une organisation réaliste et équilibrée
+   Pour chaque proposition, indique :
+   - Le type d'activité (révision, travail perso, sport, repos, etc.)
+   - Une durée indicative
+   - Le créneau suggéré (parmi ceux fournis ci-dessus UNIQUEMENT)
+   - La raison du choix
+
+3. **EXPLIQUER** tes choix de manière claire, rassurante et adaptée à la vie étudiante
+
+4. **UTILISER** la fonction propose_organization() pour structurer ta réponse
+
+═══════════════════════════════════════════════════════════
+
+**CONTRAINTES ABSOLUES :**
+
+❌ Ne JAMAIS imposer d'horaires en dehors des créneaux fournis ci-dessus
+❌ Ne JAMAIS créer, modifier ou supprimer d'événements
+❌ Ne JAMAIS utiliser add_event(), modify_event() ou delete_event()
+
+✅ UTILISE UNIQUEMENT propose_organization() pour faire des suggestions
+
+═══════════════════════════════════════════════════════════
+
+**FORMAT DE RÉPONSE :**
+
+Utilise propose_organization() avec :
+- userRequest: la demande originale
+- proposals: liste des propositions (créneau + activité + raison)
+- summary: résumé bienveillant de ton organisation
+
+Le résultat sera présenté à l'utilisateur pour validation.
+SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
+
+═══════════════════════════════════════════════════════════
+
+**TON :** Bienveillant, rassurant, pédagogique. Tu es là pour conseiller, pas pour imposer.`;
+  }
+
+  // Mode 2 : GESTION CLASSIQUE DES ÉVÉNEMENTS (sans analyse)
   const eventsText = userContext.events
     .slice(0, 8)
     .map((e: any) =>
@@ -313,13 +451,16 @@ INTERDIT de dire ces phrases sans appeler la fonction:
 4️⃣ Message avec TITRE + DATE mais PAS d'heure ET utilisateur ne demande PAS de choisir
    → request_missing_info() pour demander l'heure
 
+5️⃣ Message avec "aide-moi à organiser", "planifier mes tâches", "optimiser mon planning"
+   → Explique que tu peux analyser son planning pour des suggestions personnalisées
+
 ═══════════════════════════════════════════════════════════
 
 **LOGIQUE DE CONFIRMATION:**
 
 Si tu as proposé: "Je suggère 10h-12h"
 Et l'utilisateur répond: "Oui" / "Ok" / "Ça me va"
-→ add_event() IMMÉDIATEMENT avec title="Révision de mathématiques", date=demain, startTime="10:00", endTime="12:00"
+→ add_event() IMMÉDIATEMENT avec les infos précédentes
 
 NE REDEMANDE JAMAIS la même chose !
 
