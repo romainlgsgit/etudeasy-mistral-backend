@@ -214,8 +214,34 @@ export async function chatWithMistralHandler(
 
       const finalMessage = finalResponse.choices[0].message;
 
+      // Vérifier que le message n'est pas vide
+      let responseMessage = finalMessage.content || '';
+
+      // Si le message est vide, créer un message par défaut basé sur les tool calls
+      if (!responseMessage.trim()) {
+        console.log('[Chat] Message vide détecté, génération message par défaut');
+
+        // Créer un message par défaut selon le tool appelé
+        const toolName = assistantMessage.tool_calls[0]?.function?.name;
+        if (toolName === 'auto_place_event') {
+          const toolResult = toolResults[0];
+          try {
+            const result = JSON.parse(toolResult.content);
+            if (result.success && result.placement) {
+              responseMessage = `Ton événement "${result.placement.dayName}" a été placé ${result.placement.dayName} de ${result.placement.startTime} à ${result.placement.endTime}. Créneau de qualité "${result.placement.slotQuality}".`;
+            } else {
+              responseMessage = "L'événement a été traité.";
+            }
+          } catch (e) {
+            responseMessage = "L'événement a été traité.";
+          }
+        } else {
+          responseMessage = "Action effectuée avec succès.";
+        }
+      }
+
       return res.json({
-        message: finalMessage.content,
+        message: responseMessage,
         toolCalls: assistantMessage.tool_calls,
         success: true,
         rateLimitInfo: {
