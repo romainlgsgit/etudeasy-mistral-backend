@@ -822,8 +822,8 @@ export async function handleToolCalls(
 
           const bestSlot = filteredSlots[0];
 
-          // 5. Calculer la date du créneau
-          const slotDate = getDateFromDayName(bestSlot.day);
+          // 5. Utiliser directement la date du créneau (déjà calculée par l'analyse)
+          const slotDate = bestSlot.date; // Format YYYY-MM-DD
 
           // 6. Calculer les heures de début et fin
           const startTime = bestSlot.start;

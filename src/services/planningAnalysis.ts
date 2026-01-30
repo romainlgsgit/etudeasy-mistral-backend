@@ -9,6 +9,7 @@ import * as admin from 'firebase-admin';
 
 interface AvailableSlot {
   day: string;
+  date: string; // Format YYYY-MM-DD
   start: string;
   end: string;
   duration: number;
@@ -112,6 +113,7 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
         if (slot.duration >= constraints.study.minDuration) {
           availableSlots.push({
             day: dayName,
+            date: dateStr, // AJOUT: Date complète YYYY-MM-DD
             start: slot.start,
             end: slot.end,
             duration: slot.duration,
