@@ -140,16 +140,67 @@ export async function chatWithMistralHandler(
       // Exécuter les tool calls
       const toolResults = await handleToolCalls(assistantMessage.tool_calls, userId);
 
-      // Nettoyer le message assistant avec tool_calls
-      // Mistral API accepte content vide avec tool_calls
+      // Vérifier si c'est propose_organization (tool terminal, pas besoin de reformulation)
+      const isProposalTool = assistantMessage.tool_calls.some(
+        (tc: any) => tc.function?.name === 'propose_organization'
+      );
+
+      if (isProposalTool) {
+        console.log('[Chat] Tool propose_organization détecté - pas de deuxième appel');
+
+        // Extraire le summary des proposals
+        const proposalResult = toolResults.find((r: any) => {
+          const content = JSON.parse(r.content);
+          return content.success && content.proposalId;
+        });
+
+        let responseMessage = "Voici mon organisation proposée pour ta semaine ! 📅";
+
+        if (proposalResult) {
+          try {
+            const toolContent = JSON.parse(proposalResult.content);
+            // Le summary est dans les arguments du tool call
+            const toolCall = assistantMessage.tool_calls.find((tc: any) => tc.function?.name === 'propose_organization');
+            if (toolCall) {
+              const args = JSON.parse(toolCall.function.arguments);
+              if (args.summary) {
+                responseMessage = args.summary;
+              }
+              // Ajouter les propositions formatées
+              if (args.proposals && args.proposals.length > 0) {
+                responseMessage += "\n\n";
+                args.proposals.forEach((p: any, i: number) => {
+                  responseMessage += `\n**${i + 1}. ${p.activityTitle}**\n`;
+                  responseMessage += `📅 ${p.slotDay} de ${p.slotStart} à ${p.slotEnd} (${p.duration}min)\n`;
+                  responseMessage += `💡 ${p.reason}\n`;
+                });
+              }
+            }
+          } catch (e) {
+            console.error('[Chat] Erreur parsing proposal:', e);
+          }
+        }
+
+        return res.json({
+          message: responseMessage,
+          toolCalls: assistantMessage.tool_calls,
+          success: true,
+          rateLimitInfo: {
+            messagesUsed: rateLimitInfo.messagesUsed,
+            messagesRemaining: rateLimitInfo.messagesRemaining,
+            resetAt: rateLimitInfo.resetAt,
+            resetInMs: rateLimitInfo.resetInMs,
+          },
+        });
+      }
+
+      // Pour les autres tools, faire le deuxième appel normal
       const cleanedAssistantMessage: any = {
         role: 'assistant' as const,
         content: assistantMessage.content || '',
         tool_calls: assistantMessage.tool_calls,
       };
 
-      // Deuxième appel à Mistral avec les résultats
-      // IMPORTANT: includeTools=true pour que Mistral puisse interpréter les résultats
       console.log('[Chat] Deuxième appel Mistral avec résultats tools');
       const finalResponse = await callMistralAPI(
         [
@@ -158,7 +209,7 @@ export async function chatWithMistralHandler(
           cleanedAssistantMessage,
           ...toolResults,
         ],
-        true // Garder les tools activés pour interpréter les résultats
+        true
       );
 
       const finalMessage = finalResponse.choices[0].message;
