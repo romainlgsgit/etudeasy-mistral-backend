@@ -53,6 +53,8 @@ async function findOptimalTimeSlot(
   eventInfo: any,
   constraints: any = {}
 ): Promise<any> {
+  console.log('[findOptimalTimeSlot] Début avec userId:', userId);
+
   const db = admin.firestore();
 
   // Paramètres par défaut
@@ -85,17 +87,32 @@ async function findOptimalTimeSlot(
     }
 
     // Récupérer tous les événements de cette date
-    const eventsSnapshot = await db
-      .collection('scheduleEvents')
-      .where('userId', '==', userId)
-      .where('date', '==', dateStr)
-      .orderBy('startTime', 'asc')
-      .get();
+    console.log('[findOptimalTimeSlot] Requête Firestore pour date:', dateStr, 'userId:', userId);
+    let eventsSnapshot;
+    try {
+      eventsSnapshot = await db
+        .collection('scheduleEvents')
+        .where('userId', '==', userId)
+        .where('date', '==', dateStr)
+        .get();
+      console.log('[findOptimalTimeSlot] Événements trouvés:', eventsSnapshot.size);
+    } catch (firestoreError: any) {
+      console.error('[findOptimalTimeSlot] Erreur Firestore:', firestoreError.message);
+      console.error('[findOptimalTimeSlot] Stack:', firestoreError.stack);
+      throw firestoreError;
+    }
 
-    const dayEvents = eventsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // Trier en mémoire pour éviter besoin d'index composite
+    const dayEvents = eventsSnapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a: any, b: any) => {
+        const timeA = timeToMinutes(a.startTime);
+        const timeB = timeToMinutes(b.startTime);
+        return timeA - timeB;
+      });
 
     // Définir les créneaux possibles selon les préférences
     const preferredSlots = eventInfo.preferredTimeSlots || ['morning', 'afternoon', 'evening'];
@@ -159,6 +176,45 @@ async function findOptimalTimeSlot(
   // Trier par priorité (préférences utilisateur)
   suggestions.sort((a, b) => b.priority - a.priority);
 
+  // Si aucun créneau trouvé, suggérer des horaires par défaut pour demain
+  if (suggestions.length === 0 && !eventInfo.date) {
+    const tomorrow = new Date(searchDate);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const tomorrowDay = tomorrow.getDay();
+    const dayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][tomorrowDay];
+
+    // Proposer 3 créneaux par défaut
+    suggestions.push(
+      {
+        date: tomorrowStr,
+        startTime: '10:00',
+        endTime: minutesToTime(10 * 60 + duration),
+        dayName,
+        timeOfDay: 'matin',
+        priority: 2,
+        reason: 'Créneau suggéré le matin (peut nécessiter ajustement)',
+      },
+      {
+        date: tomorrowStr,
+        startTime: '14:00',
+        endTime: minutesToTime(14 * 60 + duration),
+        dayName,
+        timeOfDay: 'après-midi',
+        priority: 2,
+        reason: 'Créneau suggéré l\'après-midi (peut nécessiter ajustement)',
+      },
+      {
+        date: tomorrowStr,
+        startTime: '18:00',
+        endTime: minutesToTime(18 * 60 + duration),
+        dayName,
+        timeOfDay: 'soir',
+        priority: 1,
+        reason: 'Créneau suggéré le soir (peut nécessiter ajustement)',
+      }
+    );
+  }
+
   return {
     suggestions: suggestions.slice(0, 3),
     eventInfo,
@@ -204,6 +260,41 @@ export async function handleToolCalls(
           const eventIds: string[] = [];
 
           for (const eventData of args.events) {
+            // Récupérer l'adresse du campus depuis le profil utilisateur
+            let campusAddress: string | undefined;
+            try {
+              const userDoc = await db.collection('users').doc(userId).get();
+              const userData = userDoc.data();
+              campusAddress = userData?.profile?.academicInfo?.address;
+            } catch (error) {
+              console.warn('[Tools] Erreur récupération adresse campus:', error);
+            }
+
+            // Normalisation de la localisation
+            const rawLocation = eventData.location || '';
+            let resolvedLocation = rawLocation;
+            let isLocationValid = false;
+
+            // Pour les cours sans adresse spécifique, utiliser l'adresse du campus
+            if (eventData.type === 'class' && campusAddress) {
+              // Si une localisation est fournie mais semble être une salle
+              const roomPattern = /^[a-z]{1,3}\d+$/i; // JP20, A101, etc.
+              if (rawLocation && roomPattern.test(rawLocation.trim())) {
+                // C'est une salle → utiliser l'adresse du campus
+                resolvedLocation = campusAddress;
+                isLocationValid = false;
+                console.log(`[Tools] Normalisation salle "${rawLocation}" → campus "${campusAddress}"`);
+              } else if (!rawLocation || rawLocation.trim().length < 5) {
+                // Pas de localisation → utiliser l'adresse du campus
+                resolvedLocation = campusAddress;
+                isLocationValid = true;
+              } else {
+                // Localisation fournie, on la garde
+                resolvedLocation = rawLocation;
+                isLocationValid = true; // On suppose qu'elle est valide
+              }
+            }
+
             // Préparer l'événement pour Firestore
             const scheduleEvent = {
               userId,
@@ -212,7 +303,11 @@ export async function handleToolCalls(
               date: eventData.date,
               startTime: eventData.startTime,
               endTime: eventData.endTime,
-              location: eventData.location || '',
+              location: rawLocation,
+              rawLocation,
+              resolvedLocation,
+              isLocationValid,
+              address: resolvedLocation, // Legacy
               color: getEventTypeColor(eventData.type),
               dayIndex: calculateDayIndex(eventData.date),
               syncSource: 'local',
@@ -228,20 +323,6 @@ export async function handleToolCalls(
             }
             if (eventData.professor) {
               (scheduleEvent as any).professor = eventData.professor;
-            }
-
-            // Auto-remplir l'adresse de l'établissement pour les cours
-            if (eventData.type === 'class') {
-              try {
-                const userDoc = await db.collection('users').doc(userId).get();
-                const userData = userDoc.data();
-                const schoolAddress = userData?.profile?.academicInfo?.address;
-                if (schoolAddress && !eventData.address) {
-                  (scheduleEvent as any).address = schoolAddress;
-                }
-              } catch (error) {
-                console.warn('[Tools] Erreur auto-remplissage adresse:', error);
-              }
             }
 
             // Créer l'événement dans Firestore
@@ -526,8 +607,12 @@ export async function handleToolCalls(
         case 'suggest_optimal_time': {
           const { eventInfo, constraints } = args;
 
+          console.log('[Tools] suggest_optimal_time appelé avec:', { userId, eventInfo, constraints });
+
           // Trouver les meilleurs créneaux
           const optimal = await findOptimalTimeSlot(userId, eventInfo, constraints || {});
+
+          console.log('[Tools] suggest_optimal_time résultat:', optimal);
 
           if (optimal.suggestions.length === 0) {
             results.push({

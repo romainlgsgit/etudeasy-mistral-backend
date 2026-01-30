@@ -6,6 +6,8 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import * as admin from 'firebase-admin';
+import * as fs from 'fs';
+import * as path from 'path';
 import dotenv from 'dotenv';
 import { chatWithMistralHandler } from './handlers/chatHandler';
 import { verifyFirebaseToken } from './middleware/auth';
@@ -16,20 +18,31 @@ dotenv.config();
 // Initialiser Firebase Admin avec credentials
 if (admin.apps.length === 0) {
   try {
-    // En production (Render), utilise les credentials depuis env variable
+    // En production (Render), utilise les credentials depuis env variable JSON
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
       });
-      console.log('✅ Firebase Admin initialisé avec service account');
-    } else {
-      // En local, essaie sans credentials (Application Default Credentials)
+      console.log('✅ Firebase Admin initialisé avec service account (JSON)');
+    }
+    // En local, utilise le fichier de service account
+    else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      const credPath = path.resolve(__dirname, '..', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+      const serviceAccount = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
+      });
+      console.log('✅ Firebase Admin initialisé avec service account (fichier)');
+    }
+    // Sinon, essaie sans credentials (Application Default Credentials)
+    else {
       admin.initializeApp({
         projectId: process.env.FIREBASE_PROJECT_ID || 'etudeasy-d8dc7',
       });
-      console.log('✅ Firebase Admin initialisé (mode local)');
+      console.log('⚠️  Firebase Admin initialisé (mode local sans credentials)');
     }
   } catch (error) {
     console.error('❌ Erreur initialisation Firebase:', error);
