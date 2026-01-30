@@ -56,6 +56,8 @@ function getDayNameFromDate(dateString: string): string {
 
 /**
  * Trouve la prochaine occurrence d'un jour de la semaine et retourne la date YYYY-MM-DD
+ * Si c'est aujourd'hui, retourne aujourd'hui (pour permettre placement le jour même)
+ * Si le jour est passé, retourne la prochaine semaine
  */
 function getDateFromDayName(dayName: string): string {
   const daysMap: Record<string, number> = {
@@ -78,9 +80,11 @@ function getDateFromDayName(dayName: string): string {
 
   // Calculer le nombre de jours jusqu'au prochain jour cible
   let daysUntilTarget = targetDay - currentDay;
-  if (daysUntilTarget <= 0) {
-    daysUntilTarget += 7; // Prendre la prochaine semaine
+  if (daysUntilTarget < 0) {
+    // Jour déjà passé cette semaine → prendre la semaine prochaine
+    daysUntilTarget += 7;
   }
+  // Si daysUntilTarget === 0, c'est aujourd'hui → on garde 0
 
   const targetDate = new Date(today);
   targetDate.setDate(today.getDate() + daysUntilTarget);
@@ -823,7 +827,16 @@ export async function handleToolCalls(
 
           // 6. Calculer les heures de début et fin
           const startTime = bestSlot.start;
-          const endTime = minutesToTime(timeToMinutes(startTime) + duration);
+          let endTimeMinutes = timeToMinutes(startTime) + duration;
+
+          // Vérifier que l'événement ne dépasse pas minuit (23:59)
+          if (endTimeMinutes > 1439) { // 23:59 = 1439 minutes
+            // Ajuster la durée pour terminer à 23:59 maximum
+            endTimeMinutes = 1439;
+            console.log('[Tools] Durée ajustée pour ne pas dépasser minuit');
+          }
+
+          const endTime = minutesToTime(endTimeMinutes);
 
           // 7. Récupérer l'adresse du campus si nécessaire
           let campusAddress: string | undefined;
