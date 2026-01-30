@@ -308,6 +308,67 @@ export const MISTRAL_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'auto_place_event',
+      description: '🎯 OUTIL AUTOMATIQUE INTELLIGENT : Place automatiquement un événement dans le meilleur créneau disponible. Analyse le planning, trouve le meilleur moment, et crée l\'événement. Utilise cet outil quand l\'utilisateur demande "place-moi...", "trouve-moi un créneau", "choisis pour moi", ou dit "ok" après une suggestion.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventInfo: {
+            type: 'object',
+            description: 'Informations sur l\'événement à placer',
+            properties: {
+              title: {
+                type: 'string',
+                description: 'Titre de l\'événement (ex: "Révision de mathématiques")',
+              },
+              type: {
+                type: 'string',
+                enum: ['class', 'exam', 'study', 'activity'],
+                description: 'Type d\'événement',
+              },
+              duration: {
+                type: 'number',
+                description: 'Durée souhaitée en minutes (ex: 90 pour 1h30). Par défaut: 90min pour study, 60min pour activity',
+              },
+              category: {
+                type: 'string',
+                enum: ['sport', 'social', 'academic', 'creative', 'wellness'],
+                description: 'Catégorie si type=activity',
+              },
+              location: {
+                type: 'string',
+                description: 'Lieu de l\'événement (optionnel)',
+              },
+            },
+            required: ['title', 'type'],
+          },
+          preferences: {
+            type: 'object',
+            description: 'Préférences de placement (optionnel)',
+            properties: {
+              targetDate: {
+                type: 'string',
+                description: 'Date cible si spécifiée (YYYY-MM-DD). Ex: "2026-01-31" pour demain',
+              },
+              preferredTimeOfDay: {
+                type: 'string',
+                enum: ['morning', 'afternoon', 'evening', 'any'],
+                description: 'Moment de la journée préféré. Par défaut: any',
+              },
+              priorityQuality: {
+                type: 'boolean',
+                description: 'Prioriser la qualité du créneau sur la date. Par défaut: false',
+              },
+            },
+          },
+        },
+        required: ['eventInfo'],
+      },
+    },
+  },
 ];
 
 /**
@@ -437,39 +498,48 @@ INTERDIT de dire ces phrases sans appeler la fonction:
 
 ═══════════════════════════════════════════════════════════
 
-**DÉTECTION AUTOMATIQUE - APPEL IMMÉDIAT:**
+**DÉTECTION AUTOMATIQUE - CHOIX DE LA BONNE FONCTION:**
 
-1️⃣ Message avec TITRE + DATE + HEURE
-   → add_event() SANS RIEN DIRE
+🎯 **auto_place_event()** - Utilise QUAND:
+   • "place-moi une révision DEMAIN" (date vague sans heure)
+   • "trouve-moi un créneau pour réviser"
+   • "ajoute un cours de sport quand tu peux"
+   • "choisis un moment pour étudier"
+   • Utilisateur dit "ok"/"oui" après que tu aies suggéré un créneau
+   → L'IA analyse le planning et place automatiquement au meilleur moment
 
-2️⃣ Message avec "place", "trouve un créneau", "choisis pour moi"
-   → suggest_optimal_time() IMMÉDIATEMENT
+📝 **add_event()** - Utilise QUAND:
+   • "j'ai un cours de maths LUNDI à 14h" (date ET heure précises)
+   • "ajoute un examen le 2026-02-15 de 10h à 12h"
+   → L'utilisateur spécifie l'horaire exact
 
-3️⃣ Utilisateur dit "oui", "ok", "d'accord", "ça me va"
-   → add_event() avec les infos précédentes
-
-4️⃣ Message avec TITRE + DATE mais PAS d'heure ET utilisateur ne demande PAS de choisir
-   → request_missing_info() pour demander l'heure
-
-5️⃣ Message avec "aide-moi à organiser", "planifier mes tâches", "optimiser mon planning"
-   → Explique que tu peux analyser son planning pour des suggestions personnalisées
+❓ **request_missing_info()** - Utilise QUAND:
+   • L'utilisateur donne TITRE + DATE mais PAS d'heure
+   • ET ne demande PAS de choisir automatiquement
+   → Demande l'heure manquante
 
 ═══════════════════════════════════════════════════════════
 
-**LOGIQUE DE CONFIRMATION:**
+**EXEMPLES CONCRETS:**
 
-Si tu as proposé: "Je suggère 10h-12h"
-Et l'utilisateur répond: "Oui" / "Ok" / "Ça me va"
-→ add_event() IMMÉDIATEMENT avec les infos précédentes
+User: "Place-moi une révision demain"
+→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${tomorrowStr}" } })
 
-NE REDEMANDE JAMAIS la même chose !
+User: "J'ai un cours de maths lundi à 14h"
+→ add_event({ events: [{ title: "Cours de mathématiques", type: "class", date: "...", startTime: "14:00", endTime: "15:30" }] })
+
+User: "Trouve-moi un créneau pour faire du sport"
+→ auto_place_event({ eventInfo: { title: "Sport", type: "activity", category: "sport" } })
+
+User: "J'ai un examen de physique vendredi"
+→ request_missing_info({ eventDraft: { title: "Examen de physique", type: "exam", date: "..." }, missingFields: ["startTime", "endTime"], question: "À quelle heure est ton examen de physique vendredi ?" })
 
 ═══════════════════════════════════════════════════════════
 
 **FORMATS:**
 Dates: YYYY-MM-DD | Heures: HH:MM (24h)
 Types: class, exam, study, activity
-Durées: cours=90min, exam=120min, study=90min, activity=60min
+Durées par défaut: study=90min, activity=60min
 
 **TON:** Court, efficace. AGIS, ne parle pas !`;
 }

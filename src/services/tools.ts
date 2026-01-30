@@ -46,6 +46,49 @@ function minutesToTime(minutes: number): string {
 }
 
 /**
+ * Convertit une date YYYY-MM-DD en nom de jour (Lundi, Mardi, etc.)
+ */
+function getDayNameFromDate(dateString: string): string {
+  const date = new Date(dateString);
+  const days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  return days[date.getDay()];
+}
+
+/**
+ * Trouve la prochaine occurrence d'un jour de la semaine et retourne la date YYYY-MM-DD
+ */
+function getDateFromDayName(dayName: string): string {
+  const daysMap: Record<string, number> = {
+    dimanche: 0,
+    lundi: 1,
+    mardi: 2,
+    mercredi: 3,
+    jeudi: 4,
+    vendredi: 5,
+    samedi: 6,
+  };
+
+  const targetDay = daysMap[dayName.toLowerCase()];
+  if (targetDay === undefined) {
+    throw new Error(`Jour invalide: ${dayName}`);
+  }
+
+  const today = new Date();
+  const currentDay = today.getDay();
+
+  // Calculer le nombre de jours jusqu'au prochain jour cible
+  let daysUntilTarget = targetDay - currentDay;
+  if (daysUntilTarget <= 0) {
+    daysUntilTarget += 7; // Prendre la prochaine semaine
+  }
+
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + daysUntilTarget);
+
+  return targetDate.toISOString().split('T')[0];
+}
+
+/**
  * Trouve un créneau horaire optimal dans le planning de l'utilisateur
  */
 async function findOptimalTimeSlot(
@@ -671,6 +714,179 @@ export async function handleToolCalls(
               proposalId: docRef.id,
               proposalCount: proposals.length,
               message: 'Proposition d\'organisation créée avec succès',
+            }),
+          });
+          break;
+        }
+
+        case 'auto_place_event': {
+          const { eventInfo, preferences = {} } = args;
+
+          console.log('[Tools] auto_place_event appelé avec:', { userId, eventInfo, preferences });
+
+          // Import du service d'analyse
+          const { analyzePlanningForUser } = await import('../services/planningAnalysis');
+
+          // 1. Analyser le planning pour trouver les créneaux disponibles
+          const analysis = await analyzePlanningForUser(userId);
+
+          if (!analysis || !analysis.availableSlots) {
+            results.push({
+              tool_call_id: toolCall.id,
+              role: 'tool',
+              name: name,
+              content: JSON.stringify({
+                success: false,
+                error: 'Impossible d\'analyser le planning',
+              }),
+            });
+            break;
+          }
+
+          const availableSlots = analysis.availableSlots.availableSlotsFormatted || [];
+
+          if (availableSlots.length === 0) {
+            results.push({
+              tool_call_id: toolCall.id,
+              role: 'tool',
+              name: name,
+              content: JSON.stringify({
+                success: false,
+                error: 'Aucun créneau disponible trouvé dans les 7 prochains jours',
+              }),
+            });
+            break;
+          }
+
+          // 2. Définir la durée par défaut selon le type
+          const duration = eventInfo.duration || (eventInfo.type === 'study' ? 90 : 60);
+
+          // 3. Filtrer les créneaux selon les préférences
+          let filteredSlots = availableSlots.filter((slot: any) => slot.duration >= duration);
+
+          // Filtrer par date cible si spécifiée
+          if (preferences.targetDate) {
+            const targetDayName = getDayNameFromDate(preferences.targetDate);
+            filteredSlots = filteredSlots.filter((slot: any) =>
+              slot.day.toLowerCase() === targetDayName.toLowerCase()
+            );
+          }
+
+          // Filtrer par moment de la journée si spécifié
+          if (preferences.preferredTimeOfDay && preferences.preferredTimeOfDay !== 'any') {
+            filteredSlots = filteredSlots.filter((slot: any) => {
+              const hour = parseInt(slot.start.split(':')[0]);
+              if (preferences.preferredTimeOfDay === 'morning') {
+                return hour >= 7 && hour < 12;
+              } else if (preferences.preferredTimeOfDay === 'afternoon') {
+                return hour >= 12 && hour < 18;
+              } else if (preferences.preferredTimeOfDay === 'evening') {
+                return hour >= 18 && hour < 22;
+              }
+              return true;
+            });
+          }
+
+          if (filteredSlots.length === 0) {
+            results.push({
+              tool_call_id: toolCall.id,
+              role: 'tool',
+              name: name,
+              content: JSON.stringify({
+                success: false,
+                error: 'Aucun créneau correspondant aux préférences',
+                availableSlotsCount: availableSlots.length,
+              }),
+            });
+            break;
+          }
+
+          // 4. Sélectionner le meilleur créneau
+          // Tri par qualité (excellent > good > acceptable) puis par date (plus proche d'abord)
+          const qualityScores: Record<string, number> = { excellent: 3, good: 2, acceptable: 1 };
+
+          filteredSlots.sort((a: any, b: any) => {
+            // Prioriser la qualité si demandé
+            if (preferences.priorityQuality) {
+              const scoreDiff = qualityScores[b.quality] - qualityScores[a.quality];
+              if (scoreDiff !== 0) return scoreDiff;
+            }
+
+            // Sinon, prioriser la date la plus proche (on suppose que les slots sont déjà dans l'ordre chronologique)
+            return 0;
+          });
+
+          const bestSlot = filteredSlots[0];
+
+          // 5. Calculer la date du créneau
+          const slotDate = getDateFromDayName(bestSlot.day);
+
+          // 6. Calculer les heures de début et fin
+          const startTime = bestSlot.start;
+          const endTime = minutesToTime(timeToMinutes(startTime) + duration);
+
+          // 7. Récupérer l'adresse du campus si nécessaire
+          let campusAddress: string | undefined;
+          try {
+            const userDoc = await db.collection('users').doc(userId).get();
+            const userData = userDoc.data();
+            campusAddress = userData?.profile?.academicInfo?.address;
+          } catch (error) {
+            console.warn('[Tools] Erreur récupération adresse campus:', error);
+          }
+
+          // 8. Créer l'événement
+          const scheduleEvent: any = {
+            userId,
+            title: eventInfo.title,
+            type: eventInfo.type,
+            date: slotDate,
+            startTime,
+            endTime,
+            location: eventInfo.location || '',
+            rawLocation: eventInfo.location || '',
+            resolvedLocation: (eventInfo.type === 'class' && campusAddress) ? campusAddress : (eventInfo.location || ''),
+            isLocationValid: false,
+            color: getEventTypeColor(eventInfo.type),
+            dayIndex: calculateDayIndex(slotDate),
+            syncSource: 'local',
+            syncStatus: 'synced',
+            validationStatus: 'validated', // Auto-validé car placement automatique
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          // Ajouter les champs optionnels
+          if (eventInfo.category) {
+            scheduleEvent.category = eventInfo.category;
+          }
+
+          // Créer l'événement dans Firestore
+          const docRef = await db.collection('scheduleEvents').add(scheduleEvent);
+
+          // Nettoyer le cache du contexte
+          clearUserContextCache(userId);
+
+          console.log('[Tools] Événement auto-placé:', docRef.id, 'à', slotDate, startTime);
+
+          // 9. Retourner le résultat détaillé
+          results.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: name,
+            content: JSON.stringify({
+              success: true,
+              eventId: docRef.id,
+              placement: {
+                date: slotDate,
+                dayName: bestSlot.day,
+                startTime,
+                endTime,
+                duration,
+                slotQuality: bestSlot.quality,
+                reason: `Créneau ${bestSlot.quality} de ${bestSlot.duration}min disponible`,
+              },
+              message: `Événement placé automatiquement le ${bestSlot.day} de ${startTime} à ${endTime}`,
             }),
           });
           break;
