@@ -386,6 +386,16 @@ export function buildSystemPrompt(userContext: any): string {
   const todayDayName = daysOfWeek[today.getDay()];
   const tomorrowDayName = daysOfWeek[tomorrow.getDay()];
 
+  // Calculer les dates des 7 prochains jours pour aider Mistral
+  const nextWeekDates: Record<string, string> = {};
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dayName = daysOfWeek[date.getDay()];
+    const dateStr = date.toISOString().split('T')[0];
+    nextWeekDates[dayName] = dateStr;
+  }
+
   // Déterminer si on a une analyse de planning disponible
   const hasAnalysis = userContext.planningAnalysis && userContext.planningAnalysis.availableSlots;
 
@@ -477,12 +487,20 @@ SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
   const schoolName = profile.academicInfo?.name || 'Non défini';
   const level = profile.academicInfo?.level || 'Non défini';
 
+  // Formater les dates de la semaine pour le prompt
+  const weekDatesText = Object.entries(nextWeekDates)
+    .map(([day, date]) => `${day}: ${date}`)
+    .join(' | ');
+
   return `Tu es l'assistant d'EtudEasy. Tu gères le planning via des FONCTIONS, pas en parlant.
 
 **CONTEXTE:**
 Date: ${todayDayName} ${todayStr} | Demain: ${tomorrowDayName} ${tomorrowStr}
+Dates de la semaine: ${weekDatesText}
 Planning: ${eventsText || 'Vide'}
 Profil: ${schoolName}, ${level}
+
+🚨 IMPORTANT DATES: Quand l'utilisateur dit "dimanche", "lundi", etc., utilise EXACTEMENT les dates ci-dessus dans targetDate.
 
 ═══════════════════════════════════════════════════════════
 

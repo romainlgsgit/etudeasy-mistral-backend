@@ -864,7 +864,7 @@ export async function handleToolCalls(
             dayIndex: calculateDayIndex(slotDate),
             syncSource: 'local',
             syncStatus: 'synced',
-            validationStatus: 'validated', // Auto-validé car placement automatique
+            validationStatus: 'pending', // Garder en pending pour validation manuelle
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
