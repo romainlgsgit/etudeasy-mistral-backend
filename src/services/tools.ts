@@ -770,10 +770,30 @@ export async function handleToolCalls(
 
           // Filtrer par date cible si spécifiée
           if (preferences.targetDate) {
-            const targetDayName = getDayNameFromDate(preferences.targetDate);
-            filteredSlots = filteredSlots.filter((slot: any) =>
-              slot.day.toLowerCase() === targetDayName.toLowerCase()
-            );
+            // Trouver le slot dont la date correspond EXACTEMENT à targetDate
+            const exactMatchSlots = filteredSlots.filter((slot: any) => slot.date === preferences.targetDate);
+
+            if (exactMatchSlots.length > 0) {
+              // Parfait, on a trouvé des slots pour cette date exacte
+              filteredSlots = exactMatchSlots;
+            } else {
+              // Aucun slot pour cette date, essayer de corriger avec le nom du jour
+              console.log(`[Tools] ⚠️ Aucun slot trouvé pour targetDate ${preferences.targetDate}`);
+              const targetDayName = getDayNameFromDate(preferences.targetDate);
+              console.log(`[Tools] Recherche de slots pour "${targetDayName}" à la place`);
+
+              // Chercher des slots qui correspondent au nom du jour
+              const dayMatchSlots = filteredSlots.filter((slot: any) =>
+                slot.day.toLowerCase() === targetDayName.toLowerCase()
+              );
+
+              if (dayMatchSlots.length > 0) {
+                filteredSlots = dayMatchSlots;
+                console.log(`[Tools] ✅ Trouvé ${dayMatchSlots.length} slots pour ${targetDayName}, dates: ${dayMatchSlots.map((s: any) => s.date).join(', ')}`);
+              } else {
+                console.log(`[Tools] ❌ Aucun slot trouvé pour ${targetDayName}`);
+              }
+            }
           }
 
           // Filtrer par moment de la journée si spécifié
