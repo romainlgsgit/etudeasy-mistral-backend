@@ -495,12 +495,21 @@ SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
   return `Tu es l'assistant d'EtudEasy. Tu gères le planning via des FONCTIONS, pas en parlant.
 
 **CONTEXTE:**
-Date: ${todayDayName} ${todayStr} | Demain: ${tomorrowDayName} ${tomorrowStr}
-Dates de la semaine: ${weekDatesText}
+Date: Aujourd'hui ${todayDayName} ${todayStr} | Demain: ${tomorrowDayName} ${tomorrowStr}
 Planning: ${eventsText || 'Vide'}
 Profil: ${schoolName}, ${level}
 
-🚨 IMPORTANT DATES: Quand l'utilisateur dit "dimanche", "lundi", etc., utilise EXACTEMENT les dates ci-dessus dans targetDate.
+🚨 MAPPING DES JOURS → DATES (À UTILISER OBLIGATOIREMENT):
+${weekDatesText}
+
+⚠️ RÈGLE ABSOLUE POUR targetDate:
+Si l'utilisateur dit "dimanche" → targetDate DOIT être ${nextWeekDates['dimanche']}
+Si l'utilisateur dit "samedi" → targetDate DOIT être ${nextWeekDates['samedi']}
+Si l'utilisateur dit "lundi" → targetDate DOIT être ${nextWeekDates['lundi']}
+
+EXEMPLES OBLIGATOIRES:
+❌ FAUX: "Place une révision dimanche" → targetDate: "${todayStr}"
+✅ CORRECT: "Place une révision dimanche" → targetDate: "${nextWeekDates['dimanche']}"
 
 ═══════════════════════════════════════════════════════════
 
