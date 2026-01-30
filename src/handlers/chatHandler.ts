@@ -73,7 +73,7 @@ export async function chatWithMistralHandler(
     if (msg.role === 'assistant' && (msg as any).tool_calls) {
       return {
         role: msg.role,
-        content: msg.content || '',
+        content: msg.content || 'Action effectuée',
       };
     }
     return msg;
@@ -197,9 +197,13 @@ export async function chatWithMistralHandler(
       // Pour les autres tools, faire le deuxième appel normal
       const cleanedAssistantMessage: any = {
         role: 'assistant' as const,
-        content: assistantMessage.content || '',
         tool_calls: assistantMessage.tool_calls,
       };
+
+      // N'ajouter content que s'il existe et n'est pas vide
+      if (assistantMessage.content) {
+        cleanedAssistantMessage.content = assistantMessage.content;
+      }
 
       console.log('[Chat] Deuxième appel Mistral avec résultats tools');
       const finalResponse = await callMistralAPI(
