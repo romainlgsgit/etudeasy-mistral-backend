@@ -731,23 +731,33 @@ export async function handleToolCalls(
           console.log('[Tools] auto_place_event appelé avec:', { userId, eventInfo, preferences });
 
           // 🚨 CORRECTION DES BUGS: Parser TOUJOURS le message utilisateur
+          console.log('[Tools] 🔍 DEBUG: userMessage fourni?', !!userMessage);
+          console.log('[Tools] 🔍 DEBUG: preferences.targetDate AVANT parsing:', preferences.targetDate);
+
           if (userMessage) {
-            console.log('[Tools] Message utilisateur:', userMessage);
+            console.log('[Tools] 📝 Message utilisateur:', userMessage);
 
             // TOUJOURS parser le message pour extraire les informations de date
             const parsed = parseDateFromMessage(userMessage);
-            console.log('[Tools] Résultat du parsing:', parsed);
+            console.log('[Tools] 📊 Résultat du parsing:', JSON.stringify(parsed));
+
+            // Sauvegarder la targetDate originale de l'IA
+            const originalAITargetDate = preferences.targetDate;
 
             // Si le parser a détecté une targetDate avec haute confiance, l'utiliser en priorité
             if (parsed.targetDate && parsed.confidence === 'high') {
               preferences.targetDate = parsed.targetDate;
               console.log('[Tools] ✅ targetDate extraite du message:', parsed.targetDate, `(${parsed.dayName})`);
+              console.log('[Tools] 🔍 DEBUG: targetDate APRÈS remplacement:', preferences.targetDate);
 
               // Si l'IA avait fourni une targetDate différente, loguer un warning
-              if (preferences.targetDate !== parsed.targetDate) {
-                console.warn(`[Tools] ⚠️ L'IA avait fourni: ${preferences.targetDate}, corrigé par: ${parsed.targetDate}`);
+              if (originalAITargetDate && originalAITargetDate !== parsed.targetDate) {
+                console.warn(`[Tools] ⚠️ L'IA avait fourni: ${originalAITargetDate}, corrigé par: ${parsed.targetDate}`);
               }
             } else {
+              console.log('[Tools] ⚠️ Parser n\'a pas de targetDate avec haute confiance');
+              console.log('[Tools] 🔍 Confidence:', parsed.confidence);
+
               // Sinon, valider/corriger la targetDate fournie par l'IA
               const correctedTargetDate = validateAndCorrectTargetDate(
                 preferences.targetDate,
@@ -767,7 +777,11 @@ export async function handleToolCalls(
                 console.log('[Tools] ✅ preferredTimeOfDay détecté:', parsed.preferredTimeOfDay);
               }
             }
+          } else {
+            console.warn('[Tools] ⚠️⚠️⚠️ userMessage NOT PROVIDED! Cannot parse dates!');
           }
+
+          console.log('[Tools] 🔍 DEBUG: preferences.targetDate FINAL:', preferences.targetDate);
 
           // Import du service d'analyse
           const { analyzePlanningForUser } = await import('../services/planningAnalysis');
