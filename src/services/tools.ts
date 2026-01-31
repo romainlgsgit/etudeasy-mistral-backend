@@ -730,24 +730,38 @@ export async function handleToolCalls(
 
           console.log('[Tools] auto_place_event appelé avec:', { userId, eventInfo, preferences });
 
-          // 🚨 CORRECTION DES BUGS: Valider et corriger la targetDate
+          // 🚨 CORRECTION DES BUGS: Parser TOUJOURS le message utilisateur
           if (userMessage) {
             console.log('[Tools] Message utilisateur:', userMessage);
 
-            // Valider/corriger la targetDate fournie par l'IA
-            const correctedTargetDate = validateAndCorrectTargetDate(
-              preferences.targetDate,
-              userMessage
-            );
+            // TOUJOURS parser le message pour extraire les informations de date
+            const parsed = parseDateFromMessage(userMessage);
+            console.log('[Tools] Résultat du parsing:', parsed);
 
-            if (correctedTargetDate) {
-              preferences.targetDate = correctedTargetDate;
-              console.log('[Tools] ✅ targetDate validée/corrigée:', correctedTargetDate);
+            // Si le parser a détecté une targetDate avec haute confiance, l'utiliser en priorité
+            if (parsed.targetDate && parsed.confidence === 'high') {
+              preferences.targetDate = parsed.targetDate;
+              console.log('[Tools] ✅ targetDate extraite du message:', parsed.targetDate, `(${parsed.dayName})`);
+
+              // Si l'IA avait fourni une targetDate différente, loguer un warning
+              if (preferences.targetDate !== parsed.targetDate) {
+                console.warn(`[Tools] ⚠️ L'IA avait fourni: ${preferences.targetDate}, corrigé par: ${parsed.targetDate}`);
+              }
+            } else {
+              // Sinon, valider/corriger la targetDate fournie par l'IA
+              const correctedTargetDate = validateAndCorrectTargetDate(
+                preferences.targetDate,
+                userMessage
+              );
+
+              if (correctedTargetDate) {
+                preferences.targetDate = correctedTargetDate;
+                console.log('[Tools] ✅ targetDate validée/corrigée:', correctedTargetDate);
+              }
             }
 
             // Parser aussi le preferredTimeOfDay si l'IA ne l'a pas fourni
             if (!preferences.preferredTimeOfDay || preferences.preferredTimeOfDay === 'any') {
-              const parsed = parseDateFromMessage(userMessage);
               if (parsed.preferredTimeOfDay && parsed.preferredTimeOfDay !== 'any') {
                 preferences.preferredTimeOfDay = parsed.preferredTimeOfDay;
                 console.log('[Tools] ✅ preferredTimeOfDay détecté:', parsed.preferredTimeOfDay);
