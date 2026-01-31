@@ -145,13 +145,9 @@ function calculateTargetDate(targetDayIndex: number, forceNextWeek: boolean, mes
       if (message && /\baujourd'?hui\b/.test(message.toLowerCase())) {
         daysToAdd = 0;
       } else {
-        // Sinon, quand on demande un jour et qu'on est ce jour-là, on veut la semaine prochaine
-        // (sauf si c'est très tôt le matin, avant 6h, on pourrait considérer que c'est "aujourd'hui")
-        const currentHour = today.getHours();
-        if (currentHour >= 6) {
-          // Après 6h du matin, prendre la semaine prochaine
-          daysToAdd = 7;
-        }
+        // Sinon, quand on demande un jour et qu'on est ce jour-là, on veut TOUJOURS la semaine prochaine
+        // (car si on dit "samedi" et qu'on est samedi, on pense au prochain samedi)
+        daysToAdd = 7;
       }
     }
   }
