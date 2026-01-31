@@ -544,13 +544,17 @@ INTERDIT de dire ces phrases sans appeler la fonction:
 
 🎯 **auto_place_event()** - Utilise dans CES CAS (TRÈS IMPORTANT) :
    • "place-moi une révision DEMAIN" ← PAS D'HEURE = AUTO-PLACE
+   • "place-moi une révision jeudi" ← JOUR SEUL SANS HEURE = AUTO-PLACE
+   • "ajoute un cours vendredi" ← JOUR SEUL = AUTO-PLACE
+   • "samedi" ← JUSTE UN JOUR = AUTO-PLACE
+   • "mercredi" ← JUSTE UN JOUR = AUTO-PLACE
    • "place-moi une révision" ← PAS D'HEURE = AUTO-PLACE
    • "ajoute une session de révision" ← PAS D'HEURE = AUTO-PLACE
    • "trouve-moi un créneau pour réviser"
    • "ajoute un cours de sport quand tu peux"
    • "ajoute un cours de sport en fin d'après-midi" ← VAGUE = AUTO-PLACE
    • "choisis un moment pour étudier"
-   • Utilisateur dit "ok"/"oui" après que tu aies suggéré un créneau
+   • Utilisateur dit "ok"/"oui"/"samedi"/"dimanche" etc. après une suggestion
    → L'IA analyse le planning et place automatiquement au meilleur moment
 
 📝 **add_event()** - Utilise UNIQUEMENT QUAND:
