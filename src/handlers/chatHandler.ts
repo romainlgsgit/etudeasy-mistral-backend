@@ -137,75 +137,24 @@ export async function chatWithMistralHandler(
     if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
       console.log(`[Chat] ${assistantMessage.tool_calls.length} tool call(s) à exécuter`);
 
-      // CORRECTION: Forcer la bonne date pour auto_place_event si Mistral se trompe
-      assistantMessage.tool_calls = assistantMessage.tool_calls.map((tc: any) => {
+      // Log des tool calls pour debugging
+      assistantMessage.tool_calls.forEach((tc: any) => {
         if (tc.function?.name === 'auto_place_event') {
           try {
             const args = JSON.parse(tc.function.arguments);
-            const userMessage = lastUserMessage.content.toLowerCase();
-
-            // Extraire le jour mentionné dans le message utilisateur
-            const dayMatch = userMessage.match(/(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)/);
-
-            if (dayMatch && args.preferences?.targetDate) {
-              const mentionedDay = dayMatch[1];
-
-              // Détecter si c'est pour "la semaine prochaine" - vérifier aussi les 3 derniers messages
-              let isNextWeek = /semaine prochaine|la semaine prochaine|next week/i.test(userMessage);
-
-              // Si pas trouvé dans le message actuel, chercher dans les 3 derniers messages utilisateur
-              if (!isNextWeek) {
-                for (let i = cleanedMessages.length - 1; i >= Math.max(0, cleanedMessages.length - 6); i--) {
-                  if (cleanedMessages[i].role === 'user') {
-                    if (/semaine prochaine|la semaine prochaine|next week/i.test(cleanedMessages[i].content)) {
-                      isNextWeek = true;
-                      console.log(`[Chat] Contexte "semaine prochaine" trouvé dans message précédent`);
-                      break;
-                    }
-                  }
-                }
-              }
-
-              // Calculer la date correcte pour ce jour
-              const today = new Date();
-              const currentHour = today.getHours();
-              const daysOfWeek = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-
-              // Trouver l'index du jour cible
-              const targetDayIndex = daysOfWeek.indexOf(mentionedDay);
-              const currentDayIndex = today.getDay();
-
-              let daysToAdd = targetDayIndex - currentDayIndex;
-
-              // Si c'est le même jour mais après 18h, ou si le jour est passé, prendre la semaine prochaine
-              if (daysToAdd < 0 || (daysToAdd === 0 && currentHour >= 18)) {
-                daysToAdd += 7;
-              }
-
-              // Si l'utilisateur dit explicitement "semaine prochaine" et qu'on est pas déjà sur la semaine prochaine
-              if (isNextWeek && daysToAdd < 7) {
-                daysToAdd += 7;
-              }
-
-              const targetDate = new Date(today);
-              targetDate.setDate(today.getDate() + daysToAdd);
-              const correctDate = targetDate.toISOString().split('T')[0];
-
-              if (correctDate !== args.preferences.targetDate) {
-                console.log(`[Chat] ⚠️ Correction date: "${mentionedDay}" (nextWeek: ${isNextWeek}) → ${args.preferences.targetDate} CORRIGÉ en ${correctDate}`);
-                args.preferences.targetDate = correctDate;
-                tc.function.arguments = JSON.stringify(args);
-              }
-            }
+            console.log(`[Chat] 📅 auto_place_event appelé avec targetDate: ${args.preferences?.targetDate}`);
           } catch (e) {
-            console.error('[Chat] Erreur correction date:', e);
+            // ignore
           }
         }
-        return tc;
       });
 
-      // Exécuter les tool calls
-      const toolResults = await handleToolCalls(assistantMessage.tool_calls, userId);
+      // Exécuter les tool calls (en passant le message utilisateur pour le parsing de dates)
+      const toolResults = await handleToolCalls(
+        assistantMessage.tool_calls,
+        userId,
+        lastUserMessage.content
+      );
 
       // Vérifier si c'est propose_organization (tool terminal, pas besoin de reformulation)
       const isProposalTool = assistantMessage.tool_calls.some(
@@ -384,7 +333,7 @@ export async function chatWithMistralHandler(
         };
 
         // Exécuter le tool call forcé
-        await handleToolCalls([forcedToolCall], userId);
+        await handleToolCalls([forcedToolCall], userId, lastUserMessage.content);
 
         console.log('[Chat] Tool call forcé exécuté');
 

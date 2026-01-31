@@ -4,6 +4,7 @@
 
 import * as admin from 'firebase-admin';
 import { clearUserContextCache } from './context';
+import { validateAndCorrectTargetDate, parseDateFromMessage } from './dateParser';
 
 /**
  * Calcule le dayIndex (0=Lundi, 6=Dimanche) depuis une date
@@ -273,7 +274,8 @@ async function findOptimalTimeSlot(
  */
 export async function handleToolCalls(
   toolCalls: any[],
-  userId: string
+  userId: string,
+  userMessage?: string // Message utilisateur pour parser les dates
 ): Promise<any[]> {
   const db = admin.firestore();
   const results: any[] = [];
@@ -727,6 +729,31 @@ export async function handleToolCalls(
           const { eventInfo, preferences = {} } = args;
 
           console.log('[Tools] auto_place_event appelé avec:', { userId, eventInfo, preferences });
+
+          // 🚨 CORRECTION DES BUGS: Valider et corriger la targetDate
+          if (userMessage) {
+            console.log('[Tools] Message utilisateur:', userMessage);
+
+            // Valider/corriger la targetDate fournie par l'IA
+            const correctedTargetDate = validateAndCorrectTargetDate(
+              preferences.targetDate,
+              userMessage
+            );
+
+            if (correctedTargetDate) {
+              preferences.targetDate = correctedTargetDate;
+              console.log('[Tools] ✅ targetDate validée/corrigée:', correctedTargetDate);
+            }
+
+            // Parser aussi le preferredTimeOfDay si l'IA ne l'a pas fourni
+            if (!preferences.preferredTimeOfDay || preferences.preferredTimeOfDay === 'any') {
+              const parsed = parseDateFromMessage(userMessage);
+              if (parsed.preferredTimeOfDay && parsed.preferredTimeOfDay !== 'any') {
+                preferences.preferredTimeOfDay = parsed.preferredTimeOfDay;
+                console.log('[Tools] ✅ preferredTimeOfDay détecté:', parsed.preferredTimeOfDay);
+              }
+            }
+          }
 
           // Import du service d'analyse
           const { analyzePlanningForUser } = await import('../services/planningAnalysis');
