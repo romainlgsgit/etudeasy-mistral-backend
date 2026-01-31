@@ -72,7 +72,7 @@ export function parseDateFromMessage(message: string): ParsedDateInfo {
 
   // Si un jour est détecté
   if (detectedDay && detectedDayIndex !== null) {
-    const targetDate = calculateTargetDate(detectedDayIndex, isNextWeek);
+    const targetDate = calculateTargetDate(detectedDayIndex, isNextWeek, message);
     return {
       targetDate,
       dayName: detectedDay,
@@ -98,7 +98,7 @@ export function parseDateFromMessage(message: string): ParsedDateInfo {
       targetDayIndex = 6;
     }
 
-    const targetDate = calculateTargetDate(targetDayIndex, currentDay === 0);
+    const targetDate = calculateTargetDate(targetDayIndex, currentDay === 0, message);
     return {
       targetDate,
       dayName: targetDayIndex === 6 ? 'samedi' : 'dimanche',
@@ -121,7 +121,7 @@ export function parseDateFromMessage(message: string): ParsedDateInfo {
 /**
  * Calcule la date cible pour un jour de la semaine donné
  */
-function calculateTargetDate(targetDayIndex: number, forceNextWeek: boolean): string {
+function calculateTargetDate(targetDayIndex: number, forceNextWeek: boolean, message?: string): string {
   const today = new Date();
   const currentDayIndex = today.getDay();
 
@@ -141,10 +141,17 @@ function calculateTargetDate(targetDayIndex: number, forceNextWeek: boolean): st
       daysToAdd += 7;
     } else if (daysToAdd === 0) {
       // C'est aujourd'hui
-      // Si on est tard dans la journée (après 18h), prendre la semaine prochaine
-      const currentHour = today.getHours();
-      if (currentHour >= 18) {
-        daysToAdd = 7;
+      // EXCEPTION: Si le message contient explicitement "aujourd'hui", on garde aujourd'hui
+      if (message && /\baujourd'?hui\b/.test(message.toLowerCase())) {
+        daysToAdd = 0;
+      } else {
+        // Sinon, quand on demande un jour et qu'on est ce jour-là, on veut la semaine prochaine
+        // (sauf si c'est très tôt le matin, avant 6h, on pourrait considérer que c'est "aujourd'hui")
+        const currentHour = today.getHours();
+        if (currentHour >= 6) {
+          // Après 6h du matin, prendre la semaine prochaine
+          daysToAdd = 7;
+        }
       }
     }
   }

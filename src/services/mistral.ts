@@ -576,6 +576,15 @@ INTERDIT de dire ces phrases sans appeler la fonction:
 User: "Place-moi une révision demain"
 → auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${tomorrowStr}" } })
 
+User: "Place-moi une révision jeudi"
+→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${nextWeekDates['jeudi']}" } })
+
+User: "Ajoute un cours de sport samedi"
+→ auto_place_event({ eventInfo: { title: "Cours de sport", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['samedi']}" } })
+
+User: "Je préfère plutôt mercredi" (après une suggestion)
+→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${nextWeekDates['mercredi']}" } })
+
 User: "Ajoute une session de révision"
 → auto_place_event({ eventInfo: { title: "Session de révision", type: "study" } })
 
