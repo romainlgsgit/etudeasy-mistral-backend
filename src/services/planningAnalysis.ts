@@ -92,9 +92,9 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
     const availableSlots: AvailableSlot[] = [];
     const criticalInfo: string[] = [];
 
-    // Analyser chaque jour
+    // Analyser chaque jour (aujourd'hui + 7 jours suivants = 8 jours total)
     const currentDate = new Date(now);
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 8; i++) {
       const dateStr = currentDate.toISOString().split('T')[0];
       const dayEvents = eventsByDate.get(dateStr) || [];
       const dayName = getDayName(currentDate);
