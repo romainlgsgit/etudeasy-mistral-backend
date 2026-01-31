@@ -150,22 +150,36 @@ export async function chatWithMistralHandler(
             if (dayMatch && args.preferences?.targetDate) {
               const mentionedDay = dayMatch[1];
 
-              // Calculer les dates des 7 prochains jours
-              const today = new Date();
-              const daysOfWeek = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-              const correctDates: Record<string, string> = {};
+              // Détecter si c'est pour "la semaine prochaine"
+              const isNextWeek = /semaine prochaine|la semaine prochaine|next week/i.test(userMessage);
 
-              for (let i = 0; i < 7; i++) {
-                const date = new Date(today);
-                date.setDate(today.getDate() + i);
-                const dayName = daysOfWeek[date.getDay()];
-                correctDates[dayName] = date.toISOString().split('T')[0];
+              // Calculer la date correcte pour ce jour
+              const today = new Date();
+              const currentHour = today.getHours();
+              const daysOfWeek = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+              // Trouver l'index du jour cible
+              const targetDayIndex = daysOfWeek.indexOf(mentionedDay);
+              const currentDayIndex = today.getDay();
+
+              let daysToAdd = targetDayIndex - currentDayIndex;
+
+              // Si c'est le même jour mais après 18h, ou si le jour est passé, prendre la semaine prochaine
+              if (daysToAdd < 0 || (daysToAdd === 0 && currentHour >= 18)) {
+                daysToAdd += 7;
               }
 
-              const correctDate = correctDates[mentionedDay];
+              // Si l'utilisateur dit explicitement "semaine prochaine" et qu'on est pas déjà sur la semaine prochaine
+              if (isNextWeek && daysToAdd < 7) {
+                daysToAdd += 7;
+              }
 
-              if (correctDate && correctDate !== args.preferences.targetDate) {
-                console.log(`[Chat] ⚠️ Correction date: "${mentionedDay}" → ${args.preferences.targetDate} CORRIGÉ en ${correctDate}`);
+              const targetDate = new Date(today);
+              targetDate.setDate(today.getDate() + daysToAdd);
+              const correctDate = targetDate.toISOString().split('T')[0];
+
+              if (correctDate !== args.preferences.targetDate) {
+                console.log(`[Chat] ⚠️ Correction date: "${mentionedDay}" (nextWeek: ${isNextWeek}) → ${args.preferences.targetDate} CORRIGÉ en ${correctDate}`);
                 args.preferences.targetDate = correctDate;
                 tc.function.arguments = JSON.stringify(args);
               }
