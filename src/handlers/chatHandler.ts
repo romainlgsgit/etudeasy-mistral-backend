@@ -150,8 +150,21 @@ export async function chatWithMistralHandler(
             if (dayMatch && args.preferences?.targetDate) {
               const mentionedDay = dayMatch[1];
 
-              // Détecter si c'est pour "la semaine prochaine"
-              const isNextWeek = /semaine prochaine|la semaine prochaine|next week/i.test(userMessage);
+              // Détecter si c'est pour "la semaine prochaine" - vérifier aussi les 3 derniers messages
+              let isNextWeek = /semaine prochaine|la semaine prochaine|next week/i.test(userMessage);
+
+              // Si pas trouvé dans le message actuel, chercher dans les 3 derniers messages utilisateur
+              if (!isNextWeek) {
+                for (let i = cleanedMessages.length - 1; i >= Math.max(0, cleanedMessages.length - 6); i--) {
+                  if (cleanedMessages[i].role === 'user') {
+                    if (/semaine prochaine|la semaine prochaine|next week/i.test(cleanedMessages[i].content)) {
+                      isNextWeek = true;
+                      console.log(`[Chat] Contexte "semaine prochaine" trouvé dans message précédent`);
+                      break;
+                    }
+                  }
+                }
+              }
 
               // Calculer la date correcte pour ce jour
               const today = new Date();
