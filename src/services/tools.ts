@@ -726,6 +726,8 @@ export async function handleToolCalls(
         }
 
         case 'auto_place_event': {
+          console.log('[Tools] 🚨🚨🚨 CODE VERSION v2.0 - AVEC PARSING INTELLIGENT 🚨🚨🚨');
+
           const { eventInfo, preferences = {} } = args;
 
           console.log('[Tools] auto_place_event appelé avec:', { userId, eventInfo, preferences });
