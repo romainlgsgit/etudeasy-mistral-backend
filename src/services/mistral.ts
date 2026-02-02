@@ -7,6 +7,9 @@ export const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 // Choix du modèle - mistral-small-latest (meilleur function calling)
 export const MISTRAL_MODEL = 'mistral-small-latest';
 
+// Modèle vision pour l'analyse d'images
+export const MISTRAL_VISION_MODEL = 'pixtral-12b-2409';
+
 // Clé API depuis les variables d'environnement
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
 
@@ -649,6 +652,35 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
     body.tools = MISTRAL_TOOLS;
     body.tool_choice = 'auto';
   }
+
+  const response = await fetch(MISTRAL_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${MISTRAL_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Mistral API error: ${response.status} - ${errorText}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Appel API Mistral avec support vision (images)
+ * Utilise le modèle Pixtral pour l'analyse d'images
+ */
+export async function callMistralVisionAPI(messages: any[], useVision = false): Promise<any> {
+  const body: any = {
+    model: useVision ? MISTRAL_VISION_MODEL : MISTRAL_MODEL,
+    messages,
+    temperature: 0.7,
+    max_tokens: 1000, // Plus de tokens pour les réponses détaillées avec images
+  };
 
   const response = await fetch(MISTRAL_API_URL, {
     method: 'POST',

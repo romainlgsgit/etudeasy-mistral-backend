@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import dotenv from 'dotenv';
 import { chatWithMistralHandler } from './handlers/chatHandler';
+import { generateExamHandler } from './handlers/examHandler';
 import { verifyFirebaseToken } from './middleware/auth';
 
 // Charger les variables d'environnement
@@ -68,6 +69,9 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Route principale - Chat avec Mistral AI
 app.post('/chat', verifyFirebaseToken, chatWithMistralHandler);
+
+// Route pour générer des examens blancs
+app.post('/generate-exam', verifyFirebaseToken, generateExamHandler);
 
 // Démarrer le serveur
 app.listen(PORT, () => {
