@@ -848,7 +848,36 @@ export async function handleToolCalls(
                 filteredSlots = dayMatchSlots;
                 console.log(`[Tools] ✅ Trouvé ${dayMatchSlots.length} slots pour ${targetDayName}, dates: ${dayMatchSlots.map((s: any) => s.date).join(', ')}`);
               } else {
+                // ❌ AUCUN créneau trouvé pour ce jour
                 console.log(`[Tools] ❌ Aucun slot trouvé pour ${targetDayName}`);
+
+                // Proposer des alternatives au lieu de placer automatiquement
+                const alternativeDays: Record<string, any[]> = {};
+                filteredSlots.forEach((slot: any) => {
+                  if (!alternativeDays[slot.day]) {
+                    alternativeDays[slot.day] = [];
+                  }
+                  alternativeDays[slot.day].push(slot);
+                });
+
+                const alternatives = Object.keys(alternativeDays)
+                  .map(day => `${day} (${alternativeDays[day].length} créneau${alternativeDays[day].length > 1 ? 'x' : ''})`)
+                  .join(', ');
+
+                results.push({
+                  tool_call_id: toolCall.id,
+                  role: 'tool',
+                  name: name,
+                  content: JSON.stringify({
+                    success: false,
+                    error: `Aucun créneau disponible ${targetDayName}`,
+                    requestedDay: targetDayName,
+                    requestedDate: preferences.targetDate,
+                    alternatives: alternatives,
+                    suggestion: `Je peux proposer: ${alternatives}`,
+                  }),
+                });
+                break;
               }
             }
           }
