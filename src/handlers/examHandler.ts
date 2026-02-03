@@ -9,9 +9,11 @@ import { callMistralVisionAPI } from '../services/mistral';
 interface Question {
   id: string;
   question: string;
-  options: string[];
+  type: 'multiple-choice' | 'open-ended';
+  options?: string[];
   correctAnswer: string;
   explanation?: string;
+  keywords?: string[]; // Mots-clés pour évaluation des réponses ouvertes
 }
 
 interface MockExam {
@@ -20,6 +22,113 @@ interface MockExam {
   duration: number;
   difficulty: 'Facile' | 'Moyen' | 'Difficile';
   questions: Question[];
+}
+
+/**
+ * Handler pour évaluer une réponse textuelle avec l'IA
+ */
+export async function evaluateAnswerHandler(req: Request, res: Response) {
+  try {
+    const { question, userAnswer, correctAnswer, keywords } = req.body;
+    const userId = (req as any).userId;
+
+    console.log('[EvaluateAnswerHandler] Requête reçue');
+    console.log('[EvaluateAnswerHandler] UserId:', userId);
+
+    // Construire le prompt pour évaluer la réponse
+    const prompt = `Tu es un correcteur expert et bienveillant.
+
+QUESTION POSÉE:
+${question}
+
+RÉPONSE ATTENDUE:
+${correctAnswer}
+
+MOTS-CLÉS IMPORTANTS:
+${keywords?.join(', ') || 'Non spécifiés'}
+
+RÉPONSE DE L'ÉTUDIANT:
+${userAnswer}
+
+TÂCHE:
+Évalue la réponse de l'étudiant en comparant avec la réponse attendue et les mots-clés.
+Donne un score sur 100 basé sur:
+- Présence des concepts clés (50%)
+- Précision et exactitude (30%)
+- Clarté de l'explication (20%)
+
+Sois bienveillant mais juste. Accepte les formulations différentes si le concept est correct.
+
+IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
+{
+  "score": 85,
+  "feedback": "Explication détaillée du score",
+  "foundKeywords": ["mot-clé trouvé 1", "mot-clé trouvé 2"],
+  "missingKeywords": ["mot-clé manquant 1"],
+  "isCorrect": true
+}`;
+
+    // Appeler Mistral AI
+    const mistralMessage = {
+      role: 'user',
+      content: prompt,
+    };
+
+    const mistralResponse = await callMistralVisionAPI([mistralMessage], false);
+
+    console.log('[EvaluateAnswerHandler] Réponse Mistral reçue');
+
+    // Parser la réponse
+    const evaluation = parseEvaluationFromResponse(mistralResponse.content);
+
+    res.json({
+      success: true,
+      evaluation: evaluation,
+    });
+  } catch (error: any) {
+    console.error('[EvaluateAnswerHandler] Erreur:', error);
+
+    // Retourner une évaluation de fallback
+    res.json({
+      success: true,
+      evaluation: {
+        score: 50,
+        feedback: 'Évaluation automatique indisponible. Votre réponse a été enregistrée.',
+        foundKeywords: [],
+        missingKeywords: [],
+        isCorrect: false,
+      },
+      fallback: true,
+    });
+  }
+}
+
+/**
+ * Parse la réponse d'évaluation de Mistral
+ */
+function parseEvaluationFromResponse(content: string): any {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        score: parsed.score || 50,
+        feedback: parsed.feedback || 'Évaluation en cours',
+        foundKeywords: Array.isArray(parsed.foundKeywords) ? parsed.foundKeywords : [],
+        missingKeywords: Array.isArray(parsed.missingKeywords) ? parsed.missingKeywords : [],
+        isCorrect: parsed.isCorrect !== undefined ? parsed.isCorrect : parsed.score >= 60,
+      };
+    }
+    throw new Error('Pas de JSON trouvé');
+  } catch (error) {
+    return {
+      score: 50,
+      feedback: 'Évaluation automatique indisponible',
+      foundKeywords: [],
+      missingKeywords: [],
+      isCorrect: false,
+    };
+  }
 }
 
 /**
@@ -130,23 +239,35 @@ TEXTE:
 ${text}
 
 INSTRUCTIONS:
-1. Crée 5 questions de type QCM (4 options chacune)
+1. Crée 12 questions au total :
+   - 6 questions QCM (4 options chacune)
+   - 6 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
 2. Les questions doivent être basées sur le contenu du texte
-3. Varie la difficulté (2 faciles, 2 moyennes, 1 difficile)
-4. Fournis une explication claire pour chaque réponse correcte
+3. Varie la difficulté (4 faciles, 5 moyennes, 3 difficiles)
+4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
+5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
 
 IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
 {
   "title": "Titre de l'examen",
   "subject": "${subject || 'Général'}",
-  "duration": 60,
+  "duration": 90,
   "difficulty": "Moyen",
   "questions": [
     {
       "id": "1",
-      "question": "Question ici?",
+      "type": "multiple-choice",
+      "question": "Question QCM ici?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctAnswer": "Option A",
+      "explanation": "Explication de la réponse"
+    },
+    {
+      "id": "2",
+      "type": "open-ended",
+      "question": "Question ouverte ici?",
+      "correctAnswer": "Réponse attendue détaillée",
+      "keywords": ["mot-clé1", "mot-clé2", "concept important"],
       "explanation": "Explication de la réponse"
     }
   ]
@@ -172,24 +293,36 @@ function buildPromptFromDocuments(documents: any[], subject?: string): string {
   prompt += `Crée un examen blanc de ${subject || 'niveau général'}.\n\n`;
 
   prompt += `INSTRUCTIONS:
-1. Crée 8 questions de type QCM (4 options chacune)
+1. Crée 15 questions au total :
+   - 8 questions QCM (4 options chacune)
+   - 7 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
 2. Les questions doivent couvrir les concepts principaux de ${subject || 'la matière'}
-3. Varie la difficulté (3 faciles, 3 moyennes, 2 difficiles)
-4. Fournis une explication claire pour chaque réponse correcte
-${hasImages ? '5. Base les questions sur le contenu que tu vois dans les images\n' : ''}
+3. Varie la difficulté (5 faciles, 6 moyennes, 4 difficiles)
+4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
+5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
+${hasImages ? '6. Base les questions sur le contenu que tu vois dans les images\n' : ''}
 
 IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
 {
   "title": "Examen Blanc - ${subject || 'Général'}",
   "subject": "${subject || 'Général'}",
-  "duration": 90,
+  "duration": 120,
   "difficulty": "Moyen",
   "questions": [
     {
       "id": "1",
-      "question": "Question ici?",
+      "type": "multiple-choice",
+      "question": "Question QCM ici?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctAnswer": "Option A",
+      "explanation": "Explication de la réponse"
+    },
+    {
+      "id": "2",
+      "type": "open-ended",
+      "question": "Question ouverte ici?",
+      "correctAnswer": "Réponse attendue détaillée",
+      "keywords": ["mot-clé1", "mot-clé2", "concept important"],
       "explanation": "Explication de la réponse"
     }
   ]
@@ -207,23 +340,35 @@ function buildGenericPrompt(subject?: string): string {
 Crée un examen blanc de ${subject || 'niveau général'} avec des questions fondamentales.
 
 INSTRUCTIONS:
-1. Crée 6 questions de type QCM (4 options chacune)
+1. Crée 10 questions au total :
+   - 5 questions QCM (4 options chacune)
+   - 5 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
 2. Les questions doivent couvrir les concepts de base de ${subject || 'la matière'}
-3. Varie la difficulté (2 faciles, 3 moyennes, 1 difficile)
-4. Fournis une explication claire pour chaque réponse correcte
+3. Varie la difficulté (3 faciles, 5 moyennes, 2 difficiles)
+4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
+5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
 
 IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
 {
   "title": "Examen Blanc - ${subject || 'Général'}",
   "subject": "${subject || 'Général'}",
-  "duration": 60,
+  "duration": 90,
   "difficulty": "Moyen",
   "questions": [
     {
       "id": "1",
-      "question": "Question ici?",
+      "type": "multiple-choice",
+      "question": "Question QCM ici?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctAnswer": "Option A",
+      "explanation": "Explication de la réponse"
+    },
+    {
+      "id": "2",
+      "type": "open-ended",
+      "question": "Question ouverte ici?",
+      "correctAnswer": "Réponse attendue détaillée",
+      "keywords": ["mot-clé1", "mot-clé2", "concept important"],
       "explanation": "Explication de la réponse"
     }
   ]
@@ -241,13 +386,29 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
       const parsed = JSON.parse(jsonMatch[0]);
 
       // Valider et nettoyer les données
-      const questions: Question[] = parsed.questions.map((q: any, index: number) => ({
-        id: (index + 1).toString(),
-        question: q.question || 'Question non définie',
-        options: Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
-        correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-        explanation: q.explanation || 'Pas d\'explication disponible',
-      }));
+      const questions: Question[] = parsed.questions.map((q: any, index: number) => {
+        const questionType = q.type || 'multiple-choice';
+
+        if (questionType === 'open-ended') {
+          return {
+            id: `q_${index + 1}`,
+            type: 'open-ended' as const,
+            question: q.question || 'Question non définie',
+            correctAnswer: q.correctAnswer || 'Réponse non définie',
+            keywords: Array.isArray(q.keywords) ? q.keywords : [],
+            explanation: q.explanation || 'Pas d\'explication disponible',
+          };
+        } else {
+          return {
+            id: `q_${index + 1}`,
+            type: 'multiple-choice' as const,
+            question: q.question || 'Question non définie',
+            options: Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            explanation: q.explanation || 'Pas d\'explication disponible',
+          };
+        }
+      });
 
       return {
         title: parsed.title || `Examen Blanc - ${subject || 'Général'}`,
@@ -278,7 +439,8 @@ function generateFallbackExam(subject?: string): MockExam {
     difficulty: 'Moyen',
     questions: [
       {
-        id: '1',
+        id: 'q_1',
+        type: 'multiple-choice',
         question: `Quelle est une notion fondamentale en ${subjectName} ?`,
         options: [
           'Les bases théoriques',
@@ -290,7 +452,8 @@ function generateFallbackExam(subject?: string): MockExam {
         explanation: 'En ' + subjectName + ', toutes ces notions sont fondamentales pour une compréhension complète.',
       },
       {
-        id: '2',
+        id: 'q_2',
+        type: 'multiple-choice',
         question: `Quel principe est important pour comprendre ${subjectName} ?`,
         options: [
           'La méthode scientifique',
@@ -302,7 +465,8 @@ function generateFallbackExam(subject?: string): MockExam {
         explanation: 'Tous ces principes sont essentiels pour maîtriser ' + subjectName + '.',
       },
       {
-        id: '3',
+        id: 'q_3',
+        type: 'multiple-choice',
         question: `Quelle approche est recommandée pour apprendre ${subjectName} ?`,
         options: [
           'Étudier la théorie uniquement',
@@ -314,28 +478,20 @@ function generateFallbackExam(subject?: string): MockExam {
         explanation: 'L\'apprentissage efficace de ' + subjectName + ' nécessite une combinaison de théorie et de pratique.',
       },
       {
-        id: '4',
-        question: `Quel est un objectif clé de l'étude de ${subjectName} ?`,
-        options: [
-          'Développer une pensée critique',
-          'Acquérir des connaissances factuelles',
-          'Résoudre des problèmes complexes',
-          'Toutes les réponses',
-        ],
-        correctAnswer: 'Toutes les réponses',
-        explanation: 'L\'étude de ' + subjectName + ' vise à développer plusieurs compétences complémentaires.',
+        id: 'q_4',
+        type: 'open-ended',
+        question: `Pourquoi est-il important d'étudier ${subjectName} ?`,
+        correctAnswer: 'Étudier ' + subjectName + ' permet de développer une pensée critique, acquérir des connaissances essentielles, et résoudre des problèmes complexes dans ce domaine.',
+        keywords: ['pensée critique', 'connaissances', 'problèmes', 'compétences'],
+        explanation: 'L\'étude de ' + subjectName + ' développe plusieurs compétences fondamentales pour la compréhension du domaine.',
       },
       {
-        id: '5',
-        question: `Comment évaluer sa compréhension en ${subjectName} ?`,
-        options: [
-          'Relire ses notes',
-          'Faire des exercices',
-          'Expliquer à quelqu\'un d\'autre',
-          'Toutes les méthodes',
-        ],
-        correctAnswer: 'Toutes les méthodes',
-        explanation: 'Différentes méthodes d\'évaluation permettent une meilleure compréhension de ' + subjectName + '.',
+        id: 'q_5',
+        type: 'open-ended',
+        question: `Décrivez une méthode efficace pour apprendre ${subjectName}.`,
+        correctAnswer: 'Une méthode efficace combine la lecture de la théorie, la pratique régulière d\'exercices, et l\'enseignement à d\'autres pour vérifier sa compréhension.',
+        keywords: ['théorie', 'pratique', 'exercices', 'compréhension'],
+        explanation: 'L\'apprentissage actif et varié améliore la rétention et la maîtrise de ' + subjectName + '.',
       },
     ],
   };
