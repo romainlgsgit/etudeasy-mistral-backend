@@ -312,7 +312,9 @@ INSTRUCTIONS:
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
 
-IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
+IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact.
+ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "). Échappe correctement les guillemets avec \\" si nécessaire.
+
 {
   "title": "Titre de l'examen",
   "subject": "${subject || 'Général'}",
@@ -371,7 +373,9 @@ INSTRUCTIONS:
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
 ${hasImages ? '6. Base les questions sur le contenu que tu vois dans les images\n' : ''}
 
-IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
+IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact.
+ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "). Échappe correctement les guillemets avec \\" si nécessaire.
+
 {
   "title": "Examen Blanc - ${subject || 'Général'}",
   "subject": "${subject || 'Général'}",
@@ -421,7 +425,9 @@ INSTRUCTIONS:
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
 
-IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
+IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact.
+ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "). Échappe correctement les guillemets avec \\" si nécessaire.
+
 {
   "title": "Examen Blanc - ${subject || 'Général'}",
   "subject": "${subject || 'Général'}",
@@ -449,10 +455,26 @@ IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
 }
 
 /**
+ * Nettoie une chaîne JSON pour éviter les erreurs de parsing
+ */
+function sanitizeJsonString(str: string): string {
+  // Nettoyer les guillemets curly et autres caractères problématiques
+  let cleaned = str
+    .replace(/[""]/g, '"')  // Remplacer les guillemets curly par des guillemets droits
+    .replace(/['']/g, "'")  // Remplacer les apostrophes curly par des apostrophes droites
+    .replace(/\u00A0/g, ' ') // Remplacer les espaces insécables par des espaces normaux
+    .replace(/…/g, '...'); // Remplacer les ellipses par trois points
+
+  return cleaned;
+}
+
+/**
  * Parse la réponse de Mistral pour extraire l'examen
  */
 function parseExamFromResponse(content: string, subject?: string): MockExam {
   try {
+    console.log('[ExamHandler] Début du parsing, longueur contenu:', content.length);
+
     // Nettoyer le contenu en enlevant les balises markdown (```json ... ```)
     let cleanContent = content.trim();
     if (cleanContent.startsWith('```json')) {
@@ -461,10 +483,48 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
       cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
     }
 
-    // Essayer de trouver le JSON dans la réponse
-    const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+    // Nettoyer les caractères problématiques
+    cleanContent = sanitizeJsonString(cleanContent);
+
+    // Essayer de trouver le JSON dans la réponse (non-greedy)
+    const jsonMatch = cleanContent.match(/\{[\s\S]*?\}\s*$/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+      console.log('[ExamHandler] JSON trouvé, longueur:', jsonMatch[0].length);
+
+      // Log d'un extrait pour debug (premiers et derniers caractères)
+      const jsonStr = jsonMatch[0];
+      console.log('[ExamHandler] Début JSON:', jsonStr.substring(0, 100));
+      console.log('[ExamHandler] Fin JSON:', jsonStr.substring(jsonStr.length - 100));
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError: any) {
+        console.error('[ExamHandler] Erreur JSON.parse:', parseError.message);
+        console.error('[ExamHandler] Position erreur:', parseError.message.match(/position (\d+)/)?.[1]);
+
+        // Si erreur de parsing, essayer de trouver et corriger le problème
+        // Tentative 2 : parser avec une regex plus stricte pour trouver juste l'objet principal
+        const strictMatch = cleanContent.match(/\{\s*"title"[\s\S]*"questions"\s*:\s*\[[\s\S]*?\]\s*\}/);
+        if (strictMatch) {
+          console.log('[ExamHandler] Tentative avec regex stricte...');
+          parsed = JSON.parse(sanitizeJsonString(strictMatch[0]));
+        } else {
+          throw parseError;
+        }
+      }
+
+      if (!parsed) {
+        throw new Error('Parsing JSON a échoué');
+      }
+
+      console.log('[ExamHandler] JSON parsé avec succès, nombre de questions:', parsed.questions?.length || 0);
+
+      // Valider que nous avons des questions
+      if (!parsed.questions || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+        console.error('[ExamHandler] Pas de questions trouvées dans le JSON parsé');
+        throw new Error('Aucune question trouvée dans la réponse');
+      }
 
       // Valider et nettoyer les données
       const questions: Question[] = parsed.questions.map((q: any, index: number) => {
@@ -474,16 +534,18 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
           return {
             id: `q_${index + 1}`,
             type: 'open-ended' as const,
-            question: q.question || 'Question non définie',
-            correctAnswer: q.correctAnswer || 'Réponse non définie',
-            keywords: Array.isArray(q.keywords) ? q.keywords : [],
-            explanation: q.explanation || 'Pas d\'explication disponible',
+            question: sanitizeJsonString(q.question || 'Question non définie'),
+            correctAnswer: sanitizeJsonString(q.correctAnswer || 'Réponse non définie'),
+            keywords: Array.isArray(q.keywords) ? q.keywords.map((k: string) => sanitizeJsonString(k)) : [],
+            explanation: sanitizeJsonString(q.explanation || 'Pas d\'explication disponible'),
           };
         } else {
-          const options = Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'];
+          const options = Array.isArray(q.options)
+            ? q.options.map((opt: string) => sanitizeJsonString(opt))
+            : ['Option A', 'Option B', 'Option C', 'Option D'];
 
           // Normaliser correctAnswer pour qu'il corresponde exactement à une option
-          let correctAnswer = q.correctAnswer || options[0];
+          let correctAnswer = sanitizeJsonString(q.correctAnswer || options[0]);
 
           // Si correctAnswer ne correspond pas exactement à une option, trouver la plus proche
           if (!options.includes(correctAnswer)) {
@@ -498,26 +560,43 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
           return {
             id: `q_${index + 1}`,
             type: 'multiple-choice' as const,
-            question: q.question || 'Question non définie',
+            question: sanitizeJsonString(q.question || 'Question non définie'),
             options: options,
             correctAnswer: correctAnswer,
-            explanation: q.explanation || 'Pas d\'explication disponible',
+            explanation: sanitizeJsonString(q.explanation || 'Pas d\'explication disponible'),
           };
         }
       });
 
-      return {
-        title: parsed.title || `Examen Blanc - ${subject || 'Général'}`,
-        subject: parsed.subject || subject || 'Général',
+      const exam = {
+        title: sanitizeJsonString(parsed.title || `Examen Blanc - ${subject || 'Général'}`),
+        subject: sanitizeJsonString(parsed.subject || subject || 'Général'),
         duration: parsed.duration || 60,
         difficulty: parsed.difficulty || 'Moyen',
         questions: questions,
       };
+
+      console.log('[ExamHandler] Examen créé avec succès:', {
+        title: exam.title,
+        subject: exam.subject,
+        questionsCount: exam.questions.length,
+      });
+
+      return exam;
     }
 
+    console.error('[ExamHandler] Pas de JSON trouvé dans la réponse');
     throw new Error('Pas de JSON trouvé dans la réponse');
-  } catch (error) {
+  } catch (error: any) {
     console.error('[ExamHandler] Erreur parsing:', error);
+    console.error('[ExamHandler] Stack:', error.stack);
+
+    // Log un extrait du contenu pour debug
+    if (content) {
+      console.error('[ExamHandler] Extrait du contenu (premiers 500 caractères):', content.substring(0, 500));
+      console.error('[ExamHandler] Extrait du contenu (derniers 500 caractères):', content.substring(Math.max(0, content.length - 500)));
+    }
+
     return generateFallbackExam(subject);
   }
 }

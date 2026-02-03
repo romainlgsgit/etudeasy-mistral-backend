@@ -675,8 +675,12 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
  * Utilise le modèle Pixtral pour l'analyse d'images
  */
 export async function callMistralVisionAPI(messages: any[], useVision = false): Promise<any> {
+  const selectedModel = useVision ? MISTRAL_VISION_MODEL : MISTRAL_MODEL;
+  console.log('[Mistral API] useVision:', useVision);
+  console.log('[Mistral API] Selected model:', selectedModel);
+
   const body: any = {
-    model: useVision ? MISTRAL_VISION_MODEL : MISTRAL_MODEL,
+    model: selectedModel,
     messages,
     temperature: 0.7,
     max_tokens: 3000, // Augmenté pour permettre des examens complets avec 12 questions

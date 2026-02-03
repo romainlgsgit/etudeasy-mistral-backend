@@ -56,7 +56,8 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Augmenter la limite pour les images
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Route de santé
 app.get('/health', (req: Request, res: Response) => {
