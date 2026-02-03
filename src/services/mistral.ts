@@ -696,7 +696,7 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
     throw new Error(`Mistral API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
 
   // Retourner le message directement pour simplifier l'utilisation
   return {
