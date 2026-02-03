@@ -380,8 +380,16 @@ IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
  */
 function parseExamFromResponse(content: string, subject?: string): MockExam {
   try {
+    // Nettoyer le contenu en enlevant les balises markdown (```json ... ```)
+    let cleanContent = content.trim();
+    if (cleanContent.startsWith('```json')) {
+      cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+    } else if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
+    }
+
     // Essayer de trouver le JSON dans la réponse
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
 

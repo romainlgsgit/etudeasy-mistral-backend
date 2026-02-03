@@ -679,7 +679,7 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
     model: useVision ? MISTRAL_VISION_MODEL : MISTRAL_MODEL,
     messages,
     temperature: 0.7,
-    max_tokens: 1000, // Plus de tokens pour les réponses détaillées avec images
+    max_tokens: 3000, // Augmenté pour permettre des examens complets avec 12 questions
   };
 
   const response = await fetch(MISTRAL_API_URL, {
