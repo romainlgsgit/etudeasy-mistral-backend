@@ -8,6 +8,13 @@ import { Request, Response } from 'express';
 import { callMistralVisionAPI } from '../services/mistral';
 // Note: fetch est natif dans Node.js 18+
 
+function getLangInstruction(language?: string): string {
+  if (language === 'es') {
+    return '🌍 LANGUAGE RULE: ALL questions, explanations, options, and text in your response MUST be written in Spanish (español). Never use French. This includes the title, questions, options, correctAnswer, explanation, and keywords fields.\n\n';
+  }
+  return '';
+}
+
 interface Question {
   id: string;
   question: string;
@@ -31,14 +38,14 @@ interface MockExam {
  */
 export async function evaluateAnswerHandler(req: Request, res: Response) {
   try {
-    const { question, userAnswer, correctAnswer, keywords } = req.body;
+    const { question, userAnswer, correctAnswer, keywords, language } = req.body;
     const userId = (req as any).userId;
 
     console.log('[EvaluateAnswerHandler] Requête reçue');
     console.log('[EvaluateAnswerHandler] UserId:', userId);
 
     // Construire le prompt pour évaluer la réponse
-    const prompt = `Tu es un correcteur expert et bienveillant.
+    const prompt = `${getLangInstruction(language)}Tu es un correcteur expert et bienveillant.
 
 QUESTION POSÉE:
 ${question}
@@ -166,7 +173,7 @@ async function downloadFileFromStorage(storageUrl: string): Promise<string> {
  */
 export async function generateExamHandler(req: Request, res: Response) {
   try {
-    const { documents, text, subject } = req.body;
+    const { documents, text, subject, language } = req.body;
     const userId = (req as any).userId;
 
     console.log('[ExamHandler] Requête reçue');
@@ -196,13 +203,13 @@ export async function generateExamHandler(req: Request, res: Response) {
 
     if (text) {
       // Génération à partir d'un texte
-      prompt = buildPromptFromText(text, subject);
+      prompt = buildPromptFromText(text, subject, language);
     } else if (documents && documents.length > 0) {
       // Génération à partir de documents
-      prompt = buildPromptFromDocuments(documents, subject);
+      prompt = buildPromptFromDocuments(documents, subject, language);
     } else {
       // Génération générique
-      prompt = buildGenericPrompt(subject);
+      prompt = buildGenericPrompt(subject, language);
     }
 
     console.log('[ExamHandler] Prompt construit:', prompt.substring(0, 200) + '...');
@@ -290,8 +297,8 @@ export async function generateExamHandler(req: Request, res: Response) {
 /**
  * Construit un prompt à partir d'un texte
  */
-function buildPromptFromText(text: string, subject?: string): string {
-  return `Tu es un professeur expert qui crée des examens de qualité sur des sujets académiques.
+function buildPromptFromText(text: string, subject?: string, language?: string): string {
+  return `${getLangInstruction(language)}Tu es un professeur expert qui crée des examens de qualité sur des sujets académiques.
 
 TEXTE DE L'UTILISATEUR:
 ${text}
@@ -344,11 +351,11 @@ ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "
 /**
  * Construit un prompt à partir de documents
  */
-function buildPromptFromDocuments(documents: any[], subject?: string): string {
+function buildPromptFromDocuments(documents: any[], subject?: string, language?: string): string {
   const hasImages = documents.some((doc: any) => doc.type === 'image' && doc.content);
   const docNames = documents.map(d => d.name).join(', ');
 
-  let prompt = `Tu es un professeur expert qui crée des examens de qualité académiques.\n\n`;
+  let prompt = `${getLangInstruction(language)}Tu es un professeur expert qui crée des examens de qualité académiques.\n\n`;
 
   if (hasImages) {
     prompt += `Analyse attentivement les images fournies qui contiennent des exercices, examens ou cours.\n`;
@@ -407,8 +414,8 @@ ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "
 /**
  * Construit un prompt générique
  */
-function buildGenericPrompt(subject?: string): string {
-  return `Tu es un professeur expert qui crée des examens de qualité académiques.
+function buildGenericPrompt(subject?: string, language?: string): string {
+  return `${getLangInstruction(language)}Tu es un professeur expert qui crée des examens de qualité académiques.
 
 MISSION: Crée un examen blanc complet sur le sujet "${subject || 'niveau général'}" avec de VRAIES QUESTIONS SUR CE SUJET.
 

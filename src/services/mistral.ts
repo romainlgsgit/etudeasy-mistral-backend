@@ -399,6 +399,11 @@ export function buildSystemPrompt(userContext: any): string {
     nextWeekDates[dayName] = dateStr;
   }
 
+  // Instruction de langue : forcer la réponse dans la langue de l'utilisateur
+  const langInstruction = userContext.language === 'es'
+    ? '🌍 LANGUAGE RULE: ALL your responses MUST be written in Spanish (español). Never respond in French. All text, explanations, suggestions, and messages must be in Spanish.\n\n'
+    : '';
+
   // Déterminer si on a une analyse de planning disponible
   const hasAnalysis = userContext.planningAnalysis && userContext.planningAnalysis.availableSlots;
 
@@ -415,7 +420,7 @@ export function buildSystemPrompt(userContext: any): string {
       .map((s: any) => `  • ${s.day} ${s.start}-${s.end} (${s.duration}min, qualité: ${s.quality})`)
       .join('\n');
 
-    return `Tu es un assistant bienveillant d'organisation pour un étudiant.
+    return `${langInstruction}Tu es un assistant bienveillant d'organisation pour un étudiant.
 
 🚨 **RÈGLE FONDAMENTALE** 🚨
 Tu n'as PAS le droit de modifier directement son planning ni de créer, supprimer ou déplacer des événements.
@@ -495,7 +500,7 @@ SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
     .map(([day, date]) => `${day}: ${date}`)
     .join(' | ');
 
-  return `Tu es l'assistant d'EtudEasy. Tu gères le planning via des FONCTIONS, pas en parlant.
+  return `${langInstruction}Tu es l'assistant d'EtudEasy. Tu gères le planning via des FONCTIONS, pas en parlant.
 
 **CONTEXTE:**
 Date: Aujourd'hui ${todayDayName} ${todayStr} | Demain: ${tomorrowDayName} ${tomorrowStr}

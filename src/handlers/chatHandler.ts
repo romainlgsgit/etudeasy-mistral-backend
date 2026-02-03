@@ -58,7 +58,7 @@ export async function chatWithMistralHandler(
   res: Response
 ) {
   const userId = req.userId!;
-  const { messages } = req.body as { messages: ChatMessage[] };
+  const { messages, language } = req.body as { messages: ChatMessage[]; language?: string };
 
   // Validation
   if (!messages || !Array.isArray(messages)) {
@@ -105,6 +105,7 @@ export async function chatWithMistralHandler(
     // 1. Construire le contexte utilisateur
     console.log(`[Chat] Construction contexte pour ${userId}`);
     let userContext = await getUserContext(userId);
+    userContext.language = language || 'fr';
 
     // 1.5. Détecter si c'est une demande d'organisation et analyser le planning
     if (lastUserMessage && lastUserMessage.role === 'user' && isOrganizationRequest(lastUserMessage.content)) {
