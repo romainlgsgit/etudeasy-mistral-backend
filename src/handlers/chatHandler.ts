@@ -376,7 +376,7 @@ export async function chatWithMistralHandler(
     console.error('[Chat] Erreur:', error);
 
     return res.json({
-      message: userContext.language === 'es'
+      message: language === 'es'
         ? 'Estoy teniendo una dificultad técnica temporal. ¿Puedes reformular tu solicitud?'
         : 'Je rencontre une difficulté technique temporaire. Peux-tu reformuler ta demande ?',
       error: error.message,
