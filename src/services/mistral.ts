@@ -404,6 +404,11 @@ export function buildSystemPrompt(userContext: any): string {
     ? '🌍 LANGUAGE RULE: ALL your responses MUST be written in Spanish (español). Never respond in French. All text, explanations, suggestions, and messages must be in Spanish.\n\n'
     : '';
 
+  // Instruction finale renforcée pour la fin du prompt
+  const langSuffix = userContext.language === 'es'
+    ? '\n\n🚨 CRITICAL REMINDER: YOU MUST RESPOND ONLY IN SPANISH. DO NOT USE FRENCH UNDER ANY CIRCUMSTANCES. Every word, phrase, and sentence must be in Spanish (español).'
+    : '';
+
   // Déterminer si on a une analyse de planning disponible
   const hasAnalysis = userContext.planningAnalysis && userContext.planningAnalysis.availableSlots;
 
@@ -480,7 +485,7 @@ SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
 
 ═══════════════════════════════════════════════════════════
 
-**TON :** Bienveillant, rassurant, pédagogique. Tu es là pour conseiller, pas pour imposer.`;
+**TON :** Bienveillant, rassurant, pédagogique. Tu es là pour conseiller, pas pour imposer.${langSuffix}`;
   }
 
   // Mode 2 : GESTION CLASSIQUE DES ÉVÉNEMENTS (sans analyse)
@@ -639,7 +644,7 @@ Dates: YYYY-MM-DD | Heures: HH:MM (24h)
 Types: class, exam, study, activity
 Durées par défaut: study=90min, activity=60min
 
-**TON:** Court, efficace. AGIS, ne parle pas !`;
+**TON:** Court, efficace. AGIS, ne parle pas !${langSuffix}`;
 }
 
 /**

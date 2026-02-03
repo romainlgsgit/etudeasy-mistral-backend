@@ -85,8 +85,11 @@ export async function chatWithMistralHandler(
   // Si limite atteinte, retourner un message indiquant le mode hors ligne
   if (!rateLimitInfo.withinLimit) {
     console.log(`[Chat] Rate limit atteint pour ${userId}, mode hors ligne activé`);
+    const rateLimitMessage = language === 'es'
+      ? `Has alcanzado tu límite de 150 mensajes por hoy. El modo sin conexión se activa automáticamente hasta mañana a medianoche. Puedes seguir usando el asistente, pero con funcionalidades reducidas.`
+      : `Tu as atteint ta limite de 150 messages pour aujourd'hui. Le mode hors ligne est activé automatiquement jusqu'à demain minuit. Tu peux continuer à utiliser l'assistant, mais avec des fonctionnalités réduites.`;
     return res.json({
-      message: `Tu as atteint ta limite de 150 messages pour aujourd'hui. Le mode hors ligne est activé automatiquement jusqu'à demain minuit. Tu peux continuer à utiliser l'assistant, mais avec des fonctionnalités réduites.`,
+      message: rateLimitMessage,
       success: true,
       rateLimitReached: true,
       rateLimitInfo: {
@@ -171,7 +174,9 @@ export async function chatWithMistralHandler(
           return content.success && content.proposalId;
         });
 
-        let responseMessage = "Voici mon organisation proposée pour ta semaine ! 📅";
+        let responseMessage = userContext.language === 'es'
+          ? "¡Aquí está mi organización propuesta para tu semana! 📅"
+          : "Voici mon organisation proposée pour ta semaine ! 📅";
 
         if (proposalResult) {
           try {
@@ -245,15 +250,17 @@ export async function chatWithMistralHandler(
           try {
             const result = JSON.parse(toolResult.content);
             if (result.success && result.placement) {
-              responseMessage = `Ton événement "${result.placement.dayName}" a été placé ${result.placement.dayName} de ${result.placement.startTime} à ${result.placement.endTime}. Créneau de qualité "${result.placement.slotQuality}".`;
+              responseMessage = userContext.language === 'es'
+                ? `Tu evento "${result.placement.dayName}" ha sido colocado el ${result.placement.dayName} de ${result.placement.startTime} a ${result.placement.endTime}. Calidad del horario: "${result.placement.slotQuality}".`
+                : `Ton événement "${result.placement.dayName}" a été placé ${result.placement.dayName} de ${result.placement.startTime} à ${result.placement.endTime}. Créneau de qualité "${result.placement.slotQuality}".`;
             } else {
-              responseMessage = "L'événement a été traité.";
+              responseMessage = userContext.language === 'es' ? "El evento ha sido procesado." : "L'événement a été traité.";
             }
           } catch (e) {
-            responseMessage = "L'événement a été traité.";
+            responseMessage = userContext.language === 'es' ? "El evento ha sido procesado." : "L'événement a été traité.";
           }
         } else {
-          responseMessage = "Action effectuée avec succès.";
+          responseMessage = userContext.language === 'es' ? "Acción realizada con éxito." : "Action effectuée avec succès.";
         }
       }
 
@@ -339,7 +346,9 @@ export async function chatWithMistralHandler(
         console.log('[Chat] Tool call forcé exécuté');
 
         return res.json({
-          message: `C'est fait ! Révision de maths demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
+          message: userContext.language === 'es'
+            ? `¡Listo! Revisión de matemáticas mañana de ${timeInfo.startTime} a ${timeInfo.endTime} 📚`
+            : `C'est fait ! Révision de maths demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
           toolCalls: [forcedToolCall],
           success: true,
           rateLimitInfo: {
@@ -367,8 +376,9 @@ export async function chatWithMistralHandler(
     console.error('[Chat] Erreur:', error);
 
     return res.json({
-      message:
-        'Je rencontre une difficulté technique temporaire. Peux-tu reformuler ta demande ?',
+      message: userContext.language === 'es'
+        ? 'Estoy teniendo una dificultad técnica temporal. ¿Puedes reformular tu solicitud?'
+        : 'Je rencontre une difficulté technique temporaire. Peux-tu reformuler ta demande ?',
       error: error.message,
       success: false,
       rateLimitInfo: {
