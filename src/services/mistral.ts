@@ -698,6 +698,9 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
 
   const data = await response.json() as any;
 
+  console.log('[Mistral API] Response structure:', JSON.stringify(data).substring(0, 500));
+  console.log('[Mistral API] Content:', data.choices?.[0]?.message?.content);
+
   // Retourner le message directement pour simplifier l'utilisation
   return {
     content: data.choices?.[0]?.message?.content || '',
