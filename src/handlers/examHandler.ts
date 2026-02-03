@@ -408,7 +408,7 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
           if (!options.includes(correctAnswer)) {
             // Normaliser et comparer (sans casse, sans espaces superflus)
             const normalizedAnswer = correctAnswer.toLowerCase().trim();
-            const matchingOption = options.find(opt =>
+            const matchingOption = options.find((opt: string) =>
               opt.toLowerCase().trim() === normalizedAnswer
             );
             correctAnswer = matchingOption || options[0];
