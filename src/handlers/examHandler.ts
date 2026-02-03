@@ -399,12 +399,27 @@ function parseExamFromResponse(content: string, subject?: string): MockExam {
             explanation: q.explanation || 'Pas d\'explication disponible',
           };
         } else {
+          const options = Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'];
+
+          // Normaliser correctAnswer pour qu'il corresponde exactement à une option
+          let correctAnswer = q.correctAnswer || options[0];
+
+          // Si correctAnswer ne correspond pas exactement à une option, trouver la plus proche
+          if (!options.includes(correctAnswer)) {
+            // Normaliser et comparer (sans casse, sans espaces superflus)
+            const normalizedAnswer = correctAnswer.toLowerCase().trim();
+            const matchingOption = options.find(opt =>
+              opt.toLowerCase().trim() === normalizedAnswer
+            );
+            correctAnswer = matchingOption || options[0];
+          }
+
           return {
             id: `q_${index + 1}`,
             type: 'multiple-choice' as const,
             question: q.question || 'Question non définie',
-            options: Array.isArray(q.options) ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            options: options,
+            correctAnswer: correctAnswer,
             explanation: q.explanation || 'Pas d\'explication disponible',
           };
         }
