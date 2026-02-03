@@ -1,10 +1,12 @@
 /**
  * Handler pour la génération d'examens blancs avec Mistral AI
  * Supporte l'analyse d'images via Pixtral (modèle vision de Mistral)
+ * Supporte les PDFs via Firebase Storage URLs
  */
 
 import { Request, Response } from 'express';
 import { callMistralVisionAPI } from '../services/mistral';
+// Note: fetch est natif dans Node.js 18+
 
 interface Question {
   id: string;
@@ -132,6 +134,34 @@ function parseEvaluationFromResponse(content: string): any {
 }
 
 /**
+ * Télécharge un fichier depuis Firebase Storage et le convertit en base64
+ */
+async function downloadFileFromStorage(storageUrl: string): Promise<string> {
+  try {
+    console.log('[ExamHandler] Téléchargement du fichier depuis Firebase Storage...');
+    const response = await fetch(storageUrl);
+
+    if (!response.ok) {
+      throw new Error(`Erreur téléchargement: ${response.status} ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+
+    console.log('[ExamHandler] Fichier téléchargé:', {
+      size: (buffer.length / 1024 / 1024).toFixed(2) + ' MB',
+      base64Length: base64.length,
+    });
+
+    return base64;
+  } catch (error) {
+    console.error('[ExamHandler] Erreur téléchargement Firebase Storage:', error);
+    throw new Error('Impossible de télécharger le fichier depuis Firebase Storage');
+  }
+}
+
+/**
  * Handler pour générer un examen blanc
  */
 export async function generateExamHandler(req: Request, res: Response) {
@@ -144,6 +174,22 @@ export async function generateExamHandler(req: Request, res: Response) {
     console.log('[ExamHandler] Subject:', subject);
     console.log('[ExamHandler] Documents:', documents?.length || 0);
     console.log('[ExamHandler] Text length:', text?.length || 0);
+
+    // Télécharger les fichiers depuis Firebase Storage si nécessaire
+    if (documents && documents.length > 0) {
+      for (const doc of documents) {
+        if (doc.storageUrl && !doc.content) {
+          console.log(`[ExamHandler] Document ${doc.name} a une URL Firebase Storage, téléchargement...`);
+          try {
+            doc.content = await downloadFileFromStorage(doc.storageUrl);
+            console.log(`[ExamHandler] Document ${doc.name} téléchargé avec succès`);
+          } catch (error) {
+            console.error(`[ExamHandler] Erreur téléchargement ${doc.name}:`, error);
+            // Continuer avec les autres documents même si un échoue
+          }
+        }
+      }
+    }
 
     // Construire le prompt pour Mistral
     let prompt = '';
@@ -164,9 +210,23 @@ export async function generateExamHandler(req: Request, res: Response) {
     // Vérifier si on a des images à analyser
     const hasImages = documents && documents.some((doc: any) => doc.type === 'image' && doc.content);
 
+    console.log('[ExamHandler] hasImages:', hasImages);
+    if (documents) {
+      documents.forEach((doc: any, index: number) => {
+        console.log(`[ExamHandler] Document ${index}:`, {
+          name: doc.name,
+          type: doc.type,
+          hasContent: !!doc.content,
+          contentLength: doc.content ? doc.content.length : 0,
+        });
+      });
+    }
+
     // Construire le message pour Mistral
     let mistralMessage: any;
     if (hasImages) {
+      console.log('[ExamHandler] Building multi-modal message with images');
+
       // Utiliser le format multi-modal avec images
       const content: any[] = [{ type: 'text', text: prompt }];
 
@@ -231,18 +291,23 @@ export async function generateExamHandler(req: Request, res: Response) {
  * Construit un prompt à partir d'un texte
  */
 function buildPromptFromText(text: string, subject?: string): string {
-  return `Tu es un professeur expert qui crée des examens de qualité.
+  return `Tu es un professeur expert qui crée des examens de qualité sur des sujets académiques.
 
-À partir du texte suivant, crée un examen blanc de ${subject || 'niveau général'}.
-
-TEXTE:
+TEXTE DE L'UTILISATEUR:
 ${text}
+
+TA MISSION:
+Si le texte est une simple demande (ex: "fait moi un examen sur X"), IDENTIFIE LE SUJET (X) et génère un examen complet sur ce sujet avec de VRAIES QUESTIONS SUR LE SUJET.
+Si le texte contient du contenu pédagogique, génère un examen basé sur ce contenu.
+
+IMPORTANT: Tu dois générer des VRAIES QUESTIONS SUR LE SUJET demandé, PAS des questions sur comment créer l'examen.
+Exemple: Si on demande "examen sur les dinosaures", pose des questions comme "Quelle période a vu l'extinction des dinosaures?", PAS "Combien de questions voulez-vous?".
 
 INSTRUCTIONS:
 1. Crée 12 questions au total :
    - 6 questions QCM (4 options chacune)
    - 6 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
-2. Les questions doivent être basées sur le contenu du texte
+2. Les questions doivent porter SUR LE SUJET demandé (concepts, faits, théories du domaine)
 3. Varie la difficulté (4 faciles, 5 moyennes, 3 difficiles)
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
@@ -281,7 +346,7 @@ function buildPromptFromDocuments(documents: any[], subject?: string): string {
   const hasImages = documents.some((doc: any) => doc.type === 'image' && doc.content);
   const docNames = documents.map(d => d.name).join(', ');
 
-  let prompt = `Tu es un professeur expert qui crée des examens de qualité.\n\n`;
+  let prompt = `Tu es un professeur expert qui crée des examens de qualité académiques.\n\n`;
 
   if (hasImages) {
     prompt += `Analyse attentivement les images fournies qui contiennent des exercices, examens ou cours.\n`;
@@ -290,13 +355,17 @@ function buildPromptFromDocuments(documents: any[], subject?: string): string {
     prompt += `À partir des documents suivants: ${docNames}\n\n`;
   }
 
-  prompt += `Crée un examen blanc de ${subject || 'niveau général'}.\n\n`;
+  prompt += `MISSION: Crée un examen blanc complet sur le sujet "${subject || 'niveau général'}" avec de VRAIES QUESTIONS académiques.\n\n`;
 
-  prompt += `INSTRUCTIONS:
+  prompt += `IMPORTANT: Génère des VRAIES QUESTIONS sur ${subject || 'le sujet'} basées sur le contenu des documents, PAS des questions méta sur comment créer l'examen.
+Exemples de bonnes questions: "Quelle est la formule de...", "Expliquez le concept de...", "Calculez..."
+Exemples de MAUVAISES questions: "Combien de questions voulez-vous?", "Quel thème préférez-vous?"
+
+INSTRUCTIONS:
 1. Crée 15 questions au total :
    - 8 questions QCM (4 options chacune)
    - 7 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
-2. Les questions doivent couvrir les concepts principaux de ${subject || 'la matière'}
+2. Les questions doivent couvrir les concepts principaux vus dans les documents
 3. Varie la difficulté (5 faciles, 6 moyennes, 4 difficiles)
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
@@ -335,15 +404,19 @@ IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact:
  * Construit un prompt générique
  */
 function buildGenericPrompt(subject?: string): string {
-  return `Tu es un professeur expert qui crée des examens de qualité.
+  return `Tu es un professeur expert qui crée des examens de qualité académiques.
 
-Crée un examen blanc de ${subject || 'niveau général'} avec des questions fondamentales.
+MISSION: Crée un examen blanc complet sur le sujet "${subject || 'niveau général'}" avec de VRAIES QUESTIONS SUR CE SUJET.
+
+IMPORTANT: Génère des VRAIES QUESTIONS académiques sur ${subject || 'ce sujet'}, PAS des questions méta sur comment créer l'examen.
+Exemples de bonnes questions: "Quelle est la formule de...", "Expliquez le concept de...", "Qui a découvert..."
+Exemples de MAUVAISES questions: "Combien de questions voulez-vous?", "Quel format préférez-vous?"
 
 INSTRUCTIONS:
 1. Crée 10 questions au total :
    - 5 questions QCM (4 options chacune)
    - 5 questions à réponse ouverte (l'étudiant doit écrire sa réponse)
-2. Les questions doivent couvrir les concepts de base de ${subject || 'la matière'}
+2. Les questions doivent couvrir les concepts fondamentaux et importants de ${subject || 'la matière'}
 3. Varie la difficulté (3 faciles, 5 moyennes, 2 difficiles)
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
