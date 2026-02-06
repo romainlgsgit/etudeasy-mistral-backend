@@ -41,10 +41,10 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
       return null;
     }
 
-    // 2. Récupérer les événements des 7 prochains jours
+    // 2. Récupérer les événements des 14 prochains jours (2 semaines)
     const now = new Date();
     const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 7);
+    endDate.setDate(endDate.getDate() + 14);
 
     const startDateStr = now.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
@@ -92,9 +92,9 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
     const availableSlots: AvailableSlot[] = [];
     const criticalInfo: string[] = [];
 
-    // Analyser chaque jour (aujourd'hui + 7 jours suivants = 8 jours total)
+    // Analyser chaque jour (aujourd'hui + 14 jours suivants = 15 jours total)
     const currentDate = new Date(now);
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 15; i++) {
       const dateStr = currentDate.toISOString().split('T')[0];
       const dayEvents = eventsByDate.get(dateStr) || [];
       const dayName = getDayName(currentDate);

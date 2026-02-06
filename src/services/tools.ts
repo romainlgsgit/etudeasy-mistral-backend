@@ -833,7 +833,7 @@ export async function handleToolCalls(
               name: name,
               content: JSON.stringify({
                 success: false,
-                error: 'Aucun créneau disponible trouvé dans les 7 prochains jours',
+                error: 'Aucun créneau disponible trouvé dans les 14 prochains jours',
               }),
             });
             break;
