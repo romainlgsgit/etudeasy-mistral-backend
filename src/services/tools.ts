@@ -854,19 +854,21 @@ export async function handleToolCalls(
               // Parfait, on a trouvé des slots pour cette date exacte
               filteredSlots = exactMatchSlots;
             } else {
-              // Aucun slot pour cette date, essayer de corriger avec le nom du jour
-              console.log(`[Tools] ⚠️ Aucun slot trouvé pour targetDate ${preferences.targetDate}`);
+              // Aucun slot pour cette date exacte, essayer de trouver des slots pour ce jour de la semaine
+              // MAIS uniquement pour des dates >= targetDate (ne pas aller dans le passé)
+              console.log(`[Tools] ⚠️ Aucun slot trouvé pour targetDate exacte ${preferences.targetDate}`);
               const targetDayName = getDayNameFromDate(preferences.targetDate);
-              console.log(`[Tools] Recherche de slots pour "${targetDayName}" à la place`);
+              console.log(`[Tools] Recherche de slots pour "${targetDayName}" avec date >= ${preferences.targetDate}`);
 
-              // Chercher des slots qui correspondent au nom du jour
+              // Chercher des slots qui correspondent au nom du jour ET dont la date est >= targetDate
               const dayMatchSlots = filteredSlots.filter((slot: any) =>
-                slot.day.toLowerCase() === targetDayName.toLowerCase()
+                slot.day.toLowerCase() === targetDayName.toLowerCase() &&
+                slot.date >= preferences.targetDate // Ne prendre que les dates futures ou égales
               );
 
               if (dayMatchSlots.length > 0) {
                 filteredSlots = dayMatchSlots;
-                console.log(`[Tools] ✅ Trouvé ${dayMatchSlots.length} slots pour ${targetDayName}, dates: ${dayMatchSlots.map((s: any) => s.date).join(', ')}`);
+                console.log(`[Tools] ✅ Trouvé ${dayMatchSlots.length} slots pour ${targetDayName} (>= ${preferences.targetDate}), dates: ${dayMatchSlots.map((s: any) => s.date).join(', ')}`);
               } else {
                 // ❌ AUCUN créneau trouvé pour ce jour
                 console.log(`[Tools] ❌ Aucun slot trouvé pour ${targetDayName}`);
