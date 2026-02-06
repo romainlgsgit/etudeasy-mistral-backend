@@ -390,9 +390,19 @@ export function buildSystemPrompt(userContext: any): string {
   const todayDayName = daysOfWeek[today.getDay()];
   const tomorrowDayName = daysOfWeek[tomorrow.getDay()];
 
-  // Calculer les dates des 7 prochains jours pour aider Mistral
-  const nextWeekDates: Record<string, string> = {};
+  // Calculer les dates de CETTE SEMAINE (les 7 prochains jours)
+  const thisWeekDates: Record<string, string> = {};
   for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dayName = daysOfWeek[date.getDay()];
+    const dateStr = date.toISOString().split('T')[0];
+    thisWeekDates[dayName] = dateStr;
+  }
+
+  // Calculer les dates de LA SEMAINE PROCHAINE (jours 7 à 13)
+  const nextWeekDates: Record<string, string> = {};
+  for (let i = 7; i < 14; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
     const dayName = daysOfWeek[date.getDay()];
@@ -568,7 +578,11 @@ SEUL l'utilisateur peut décider d'appliquer ou non tes suggestions.
   const level = profile.academicInfo?.level || (userContext.language === 'es' ? 'No definido' : 'Non défini');
 
   // Formater les dates de la semaine pour le prompt
-  const weekDatesText = Object.entries(nextWeekDates)
+  const thisWeekText = Object.entries(thisWeekDates)
+    .map(([day, date]) => `${day}: ${date}`)
+    .join(' | ');
+
+  const nextWeekText = Object.entries(nextWeekDates)
     .map(([day, date]) => `${day}: ${date}`)
     .join(' | ');
 
@@ -582,16 +596,24 @@ Calendario: ${eventsText || 'Vacío'}
 Perfil: ${schoolName}, ${level}
 
 🚨 MAPEO DE DÍAS → FECHAS (USAR OBLIGATORIAMENTE):
-${weekDatesText}
 
-⚠️ REGLA ABSOLUTA PARA targetDate:
-Si el usuario dice "domingo" → targetDate DEBE ser ${nextWeekDates['dimanche']}
-Si el usuario dice "sábado" → targetDate DEBE ser ${nextWeekDates['samedi']}
-Si el usuario dice "lunes" → targetDate DEBE ser ${nextWeekDates['lundi']}
+📅 ESTA SEMANA:
+${thisWeekText}
+
+📅 LA SEMANA QUE VIENE (cuando el usuario dice "la semana próxima" / "semana que viene"):
+${nextWeekText}
+
+⚠️ REGLA CRÍTICA - "LA SEMANA QUE VIENE" / "SEMANA PRÓXIMA":
+Si el usuario dice "la semana que viene" o "semana próxima" + un día → USA LAS FECHAS DE LA SEMANA QUE VIENE
+Ejemplo: "la semana que viene el viernes y sábado" → viernes=${nextWeekDates['vendredi']}, sábado=${nextWeekDates['samedi']}
+
+⚠️ REGLA PARA DÍAS SIN "SEMANA QUE VIENE":
+Si el usuario dice solo "domingo" → targetDate DEBE ser ${thisWeekDates['dimanche']}
+Si el usuario dice solo "sábado" → targetDate DEBE ser ${thisWeekDates['samedi']}
 
 EJEMPLOS OBLIGATORIOS:
-❌ INCORRECTO: "Coloca una revisión domingo" → targetDate: "${todayStr}"
-✅ CORRECTO: "Coloca una revisión domingo" → targetDate: "${nextWeekDates['dimanche']}"
+❌ INCORRECTO: "la semana que viene viernes y sábado" → targetDate: "${thisWeekDates['vendredi']}" y "${thisWeekDates['samedi']}"
+✅ CORRECTO: "la semana que viene viernes y sábado" → targetDate: "${nextWeekDates['vendredi']}" y "${nextWeekDates['samedi']}"
 
 ═══════════════════════════════════════════════════════════
 
@@ -677,13 +699,17 @@ User: "Colócame una revisión mañana"
 → auto_place_event({ eventInfo: { title: "Revisión", type: "study" }, preferences: { targetDate: "${tomorrowStr}" } })
 
 User: "Colócame una revisión jueves"
-→ auto_place_event({ eventInfo: { title: "Revisión", type: "study" }, preferences: { targetDate: "${nextWeekDates['jeudi']}" } })
+→ auto_place_event({ eventInfo: { title: "Revisión", type: "study" }, preferences: { targetDate: "${thisWeekDates['jeudi']}" } })
 
 User: "Añade una clase de deporte sábado"
-→ auto_place_event({ eventInfo: { title: "Clase de deporte", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['samedi']}" } })
+→ auto_place_event({ eventInfo: { title: "Clase de deporte", type: "activity", category: "sport" }, preferences: { targetDate: "${thisWeekDates['samedi']}" } })
 
 User: "Prefiero mejor miércoles" (después de una sugerencia)
-→ auto_place_event({ eventInfo: { title: "Revisión", type: "study" }, preferences: { targetDate: "${nextWeekDates['mercredi']}" } })
+→ auto_place_event({ eventInfo: { title: "Revisión", type: "study" }, preferences: { targetDate: "${thisWeekDates['mercredi']}" } })
+
+User: "La semana que viene colócame 2 clases de deporte viernes y sábado"
+→ auto_place_event({ eventInfo: { title: "Clase de deporte", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['vendredi']}" } })
+→ auto_place_event({ eventInfo: { title: "Clase de deporte", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['samedi']}" } })
 
 User: "Añade una sesión de revisión"
 → auto_place_event({ eventInfo: { title: "Sesión de revisión", type: "study" } })
@@ -773,16 +799,24 @@ Planning: ${eventsText || 'Vide'}
 Profil: ${schoolName}, ${level}
 
 🚨 MAPPING DES JOURS → DATES (À UTILISER OBLIGATOIREMENT):
-${weekDatesText}
 
-⚠️ RÈGLE ABSOLUE POUR targetDate:
-Si l'utilisateur dit "dimanche" → targetDate DOIT être ${nextWeekDates['dimanche']}
-Si l'utilisateur dit "samedi" → targetDate DOIT être ${nextWeekDates['samedi']}
-Si l'utilisateur dit "lundi" → targetDate DOIT être ${nextWeekDates['lundi']}
+📅 CETTE SEMAINE:
+${thisWeekText}
+
+📅 LA SEMAINE PROCHAINE (quand l'utilisateur dit "la semaine prochaine" / "semaine prochaine"):
+${nextWeekText}
+
+⚠️ RÈGLE CRITIQUE - "LA SEMAINE PROCHAINE" / "SEMAINE PROCHAINE":
+Si l'utilisateur dit "la semaine prochaine" ou "semaine prochaine" + un jour → UTILISE LES DATES DE LA SEMAINE PROCHAINE
+Exemple: "la semaine prochaine vendredi et samedi" → vendredi=${nextWeekDates['vendredi']}, samedi=${nextWeekDates['samedi']}
+
+⚠️ RÈGLE POUR JOURS SANS "SEMAINE PROCHAINE":
+Si l'utilisateur dit juste "dimanche" → targetDate DOIT être ${thisWeekDates['dimanche']}
+Si l'utilisateur dit juste "samedi" → targetDate DOIT être ${thisWeekDates['samedi']}
 
 EXEMPLES OBLIGATOIRES:
-❌ FAUX: "Place une révision dimanche" → targetDate: "${todayStr}"
-✅ CORRECT: "Place une révision dimanche" → targetDate: "${nextWeekDates['dimanche']}"
+❌ FAUX: "la semaine prochaine vendredi et samedi" → targetDate: "${thisWeekDates['vendredi']}" et "${thisWeekDates['samedi']}"
+✅ CORRECT: "la semaine prochaine vendredi et samedi" → targetDate: "${nextWeekDates['vendredi']}" et "${nextWeekDates['samedi']}"
 
 ═══════════════════════════════════════════════════════════
 
@@ -868,13 +902,17 @@ User: "Place-moi une révision demain"
 → auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${tomorrowStr}" } })
 
 User: "Place-moi une révision jeudi"
-→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${nextWeekDates['jeudi']}" } })
+→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${thisWeekDates['jeudi']}" } })
 
 User: "Ajoute un cours de sport samedi"
-→ auto_place_event({ eventInfo: { title: "Cours de sport", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['samedi']}" } })
+→ auto_place_event({ eventInfo: { title: "Cours de sport", type: "activity", category: "sport" }, preferences: { targetDate: "${thisWeekDates['samedi']}" } })
 
 User: "Je préfère plutôt mercredi" (après une suggestion)
-→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${nextWeekDates['mercredi']}" } })
+→ auto_place_event({ eventInfo: { title: "Révision", type: "study" }, preferences: { targetDate: "${thisWeekDates['mercredi']}" } })
+
+User: "La semaine prochaine place-moi 2 cours de sport vendredi et samedi"
+→ auto_place_event({ eventInfo: { title: "Cours de sport", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['vendredi']}" } })
+→ auto_place_event({ eventInfo: { title: "Cours de sport", type: "activity", category: "sport" }, preferences: { targetDate: "${nextWeekDates['samedi']}" } })
 
 User: "Ajoute une session de révision"
 → auto_place_event({ eventInfo: { title: "Session de révision", type: "study" } })
