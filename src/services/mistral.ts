@@ -8,7 +8,8 @@ export const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 export const MISTRAL_MODEL = 'mistral-small-latest';
 
 // Modèle vision pour l'analyse d'images
-export const MISTRAL_VISION_MODEL = 'pixtral-12b-2409';
+// pixtral-large-latest est plus puissant pour lire les documents techniques/denses
+export const MISTRAL_VISION_MODEL = 'pixtral-large-latest';
 
 // Clé API depuis les variables d'environnement
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY!;
@@ -891,9 +892,13 @@ export async function callMistralAPI(messages: any[], includeTools = true): Prom
   return await response.json();
 }
 
+// Modèle vision de fallback si le modèle principal n'est pas disponible
+export const MISTRAL_VISION_MODEL_FALLBACK = 'pixtral-12b-2409';
+
 /**
  * Appel API Mistral avec support vision (images)
  * Utilise le modèle Pixtral pour l'analyse d'images
+ * Avec fallback automatique si le modèle principal n'est pas disponible
  */
 export async function callMistralVisionAPI(messages: any[], useVision = false): Promise<any> {
   const selectedModel = useVision ? MISTRAL_VISION_MODEL : MISTRAL_MODEL;
@@ -904,10 +909,10 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
     model: selectedModel,
     messages,
     temperature: 0.7,
-    max_tokens: 3000, // Augmenté pour permettre des examens complets avec 12 questions
+    max_tokens: 4000, // Augmenté pour permettre des examens complets avec 15 questions
   };
 
-  const response = await fetch(MISTRAL_API_URL, {
+  let response = await fetch(MISTRAL_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -915,6 +920,23 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
     },
     body: JSON.stringify(body),
   });
+
+  // Si le modèle principal n'est pas disponible, essayer le fallback
+  if (!response.ok && useVision && selectedModel === MISTRAL_VISION_MODEL) {
+    const errorText = await response.text();
+    console.warn(`[Mistral API] Modèle ${MISTRAL_VISION_MODEL} non disponible: ${response.status} - ${errorText}`);
+    console.log(`[Mistral API] Tentative avec le modèle de fallback: ${MISTRAL_VISION_MODEL_FALLBACK}`);
+
+    body.model = MISTRAL_VISION_MODEL_FALLBACK;
+    response = await fetch(MISTRAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${MISTRAL_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -924,7 +946,7 @@ export async function callMistralVisionAPI(messages: any[], useVision = false): 
   const data = await response.json() as any;
 
   console.log('[Mistral API] Response structure:', JSON.stringify(data).substring(0, 500));
-  console.log('[Mistral API] Content:', data.choices?.[0]?.message?.content);
+  console.log('[Mistral API] Content (500 premiers chars):', data.choices?.[0]?.message?.content?.substring(0, 500));
 
   // Retourner le message directement pour simplifier l'utilisation
   return {

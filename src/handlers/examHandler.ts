@@ -265,6 +265,7 @@ export async function generateExamHandler(req: Request, res: Response) {
     const mistralResponse = await callMistralVisionAPI([mistralMessage], hasImages);
 
     console.log('[ExamHandler] Réponse Mistral reçue');
+    console.log('[ExamHandler] Réponse brute (500 premiers caractères):', mistralResponse.content?.substring(0, 500));
 
     // Parser la réponse de Mistral
     const exam = parseExamFromResponse(mistralResponse.content, subject);
@@ -273,6 +274,30 @@ export async function generateExamHandler(req: Request, res: Response) {
       title: exam.title,
       questions: exam.questions.length,
     });
+
+    // Vérifier si l'examen semble générique (indication que l'image n'a pas été bien lue)
+    if (hasImages) {
+      const genericIndicators = [
+        'notion fondamentale',
+        'concept important',
+        'cette matière',
+        'niveau général',
+        'principe est important',
+        'approche est recommandée',
+      ];
+      const examText = JSON.stringify(exam).toLowerCase();
+      const isGeneric = genericIndicators.some(indicator => examText.includes(indicator));
+
+      if (isGeneric) {
+        console.warn('[ExamHandler] ⚠️ ATTENTION: L\'examen généré semble générique!');
+        console.warn('[ExamHandler] Le modèle n\'a peut-être pas bien lu le contenu de l\'image.');
+        console.warn('[ExamHandler] Sujet demandé:', subject);
+        console.warn('[ExamHandler] Titre généré:', exam.title);
+        console.warn('[ExamHandler] Première question:', exam.questions[0]?.question);
+      } else {
+        console.log('[ExamHandler] ✅ L\'examen semble spécifique au contenu de l\'image');
+      }
+    }
 
     res.json({
       success: true,
@@ -358,13 +383,34 @@ function buildPromptFromDocuments(documents: any[], subject?: string, language?:
   let prompt = `${getLangInstruction(language)}Tu es un professeur expert qui crée des examens de qualité académiques.\n\n`;
 
   if (hasImages) {
-    prompt += `Analyse attentivement les images fournies qui contiennent des exercices, examens ou cours.\n`;
-    prompt += `Extrait le contenu textuel des images (formules, questions, théorèmes, etc.).\n\n`;
+    prompt += `🔍 ÉTAPE 1 - ANALYSE OBLIGATOIRE DE L'IMAGE:
+Tu DOIS d'abord lire attentivement TOUT le contenu visible dans l'image/les images.
+Les images peuvent contenir:
+- Des cours manuscrits ou imprimés
+- Des exercices (TD, TP)
+- Des formules mathématiques ou scientifiques
+- Des schémas, graphiques, tableaux
+- Du texte dense avec des données techniques
+
+IMPORTANT: Lis CHAQUE ligne de texte visible, même si c'est:
+- Du texte petit ou serré
+- Des formules avec des exposants/indices
+- Des listes de données numériques
+- Des exercices avec plusieurs sous-questions
+
+🎯 ÉTAPE 2 - GÉNÉRATION DE L'EXAMEN:
+Génère un examen basé EXCLUSIVEMENT sur le contenu que tu as lu dans l'image.
+Si tu vois un TD de "Machines hydrauliques", tes questions doivent porter sur les pompes, débits, pressions, etc.
+Si tu vois des exercices de maths, tes questions doivent reprendre ces exercices ou concepts similaires.
+
+⚠️ RÈGLE CRITIQUE:
+Si tu n'arrives pas à lire le contenu de l'image clairement, tu DOIS quand même essayer de deviner le sujet d'après ce que tu peux voir (titres, formules partielles, schémas) et générer des questions sur CE sujet spécifique.
+NE GÉNÈRE JAMAIS un examen générique si tu peux identifier un sujet dans l'image.\n\n`;
   } else {
     prompt += `À partir des documents suivants: ${docNames}\n\n`;
   }
 
-  prompt += `MISSION: Crée un examen blanc complet sur le sujet "${subject || 'niveau général'}" avec de VRAIES QUESTIONS académiques.\n\n`;
+  prompt += `MISSION: Crée un examen blanc complet sur le sujet "${subject || 'niveau général'}" avec de VRAIES QUESTIONS académiques BASÉES SUR LE CONTENU VISIBLE.\n\n`;
 
   prompt += `IMPORTANT: Génère des VRAIES QUESTIONS sur ${subject || 'le sujet'} basées sur le contenu des documents, PAS des questions méta sur comment créer l'examen.
 Exemples de bonnes questions: "Quelle est la formule de...", "Expliquez le concept de...", "Calculez..."
@@ -378,7 +424,7 @@ INSTRUCTIONS:
 3. Varie la difficulté (5 faciles, 6 moyennes, 4 difficiles)
 4. Pour les QCM : fournis une explication claire pour chaque réponse correcte
 5. Pour les questions ouvertes : fournis la réponse attendue ET des mots-clés importants
-${hasImages ? '6. Base les questions sur le contenu que tu vois dans les images\n' : ''}
+${hasImages ? '6. OBLIGATOIRE: Base les questions sur le contenu SPÉCIFIQUE que tu vois dans les images (ex: si tu vois un TD de pompes hydrauliques, pose des questions sur les pompes, débits, rendements, etc.)\n' : ''}
 
 IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide dans ce format exact.
 ATTENTION : Utilise des guillemets droits (") et non des guillemets courbes (" "). Échappe correctement les guillemets avec \\" si nécessaire.
