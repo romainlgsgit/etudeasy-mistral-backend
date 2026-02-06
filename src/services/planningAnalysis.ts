@@ -155,7 +155,7 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
       availableSlots: {
         summary,
         criticalInfo,
-        availableSlotsFormatted: availableSlots.slice(0, 15), // Limiter à 15 meilleurs créneaux
+        availableSlotsFormatted: availableSlots, // Garder tous les créneaux pour permettre la recherche sur 14 jours
       },
     };
   } catch (error) {
