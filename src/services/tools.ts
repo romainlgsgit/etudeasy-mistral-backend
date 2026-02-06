@@ -826,6 +826,12 @@ export async function handleToolCalls(
 
           const availableSlots = analysis.availableSlots.availableSlotsFormatted || [];
 
+          // DEBUG: Afficher toutes les dates disponibles
+          const uniqueDates = [...new Set(availableSlots.map((s: any) => s.date))].sort();
+          console.log(`[Tools] 📅 Dates disponibles dans l'analyse: ${uniqueDates.join(', ')}`);
+          console.log(`[Tools] 📅 Nombre total de créneaux: ${availableSlots.length}`);
+          console.log(`[Tools] 📅 targetDate demandée: ${preferences.targetDate}`);
+
           if (availableSlots.length === 0) {
             results.push({
               tool_call_id: toolCall.id,

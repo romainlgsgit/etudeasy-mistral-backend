@@ -49,6 +49,8 @@ export async function analyzePlanningForUser(userId: string): Promise<PlanningAn
     const startDateStr = now.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
 
+    console.log(`[PlanningAnalysis] 📅 Période analysée: ${startDateStr} → ${endDateStr}`);
+
     const eventsSnapshot = await db
       .collection('scheduleEvents')
       .where('userId', '==', userId)
