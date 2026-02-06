@@ -307,6 +307,7 @@ export async function handleToolCalls(
       switch (name) {
         case 'add_event': {
           const eventIds: string[] = [];
+          const createdEvents: any[] = [];
 
           for (const eventData of args.events) {
             // Récupérer l'adresse du campus depuis le profil utilisateur
@@ -377,11 +378,28 @@ export async function handleToolCalls(
             // Créer l'événement dans Firestore
             const docRef = await db.collection('scheduleEvents').add(scheduleEvent);
             eventIds.push(docRef.id);
-            console.log(`[Tools] Événement créé: ${docRef.id}`);
+
+            // Garder les détails pour le message de confirmation
+            createdEvents.push({
+              id: docRef.id,
+              title: eventData.title,
+              type: eventData.type,
+              date: eventData.date,
+              dayName: getDayNameFromDate(eventData.date),
+              startTime: eventData.startTime,
+              endTime: eventData.endTime,
+            });
+
+            console.log(`[Tools] Événement créé: ${docRef.id} - ${eventData.title}`);
           }
 
           // Nettoyer le cache du contexte
           clearUserContextCache(userId);
+
+          // Construire un message de confirmation détaillé
+          const eventsDetails = createdEvents.map(e =>
+            `• **${e.title}** - ${e.dayName} de ${e.startTime} à ${e.endTime}`
+          ).join('\n');
 
           results.push({
             tool_call_id: toolCall.id,
@@ -390,8 +408,10 @@ export async function handleToolCalls(
             content: JSON.stringify({
               success: true,
               eventIds,
+              events: createdEvents,
               count: eventIds.length,
               message: `${eventIds.length} événement(s) ajouté(s) avec succès`,
+              details: eventsDetails,
             }),
           });
           break;
@@ -997,6 +1017,8 @@ export async function handleToolCalls(
               success: true,
               eventId: docRef.id,
               placement: {
+                title: eventInfo.title,
+                type: eventInfo.type,
                 date: slotDate,
                 dayName: bestSlot.day,
                 startTime,
@@ -1005,7 +1027,7 @@ export async function handleToolCalls(
                 slotQuality: bestSlot.quality,
                 reason: `Créneau ${bestSlot.quality} de ${bestSlot.duration}min disponible`,
               },
-              message: `Événement placé automatiquement le ${bestSlot.day} de ${startTime} à ${endTime}`,
+              message: `Événement "${eventInfo.title}" placé automatiquement le ${bestSlot.day} de ${startTime} à ${endTime}`,
             }),
           });
           break;

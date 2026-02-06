@@ -53,6 +53,70 @@ function extractTimeInfo(message: string): { startTime?: string; endTime?: strin
   return null;
 }
 
+/**
+ * Extrait le titre d'un événement des messages de conversation
+ */
+function extractEventTitle(messages: ChatMessage[]): string {
+  // Chercher dans les derniers messages utilisateur
+  for (let i = messages.length - 1; i >= 0 && i >= messages.length - 5; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'user') continue;
+
+    const text = msg.content.toLowerCase();
+
+    // Patterns pour extraire le titre
+    const patterns = [
+      /(?:cours|classe)\s+(?:de\s+)?(\w+)/i,
+      /(?:révision|revision)\s+(?:de\s+)?(\w+)?/i,
+      /(?:examen|exam)\s+(?:de\s+)?(\w+)/i,
+      /(?:étude|etude)\s+(?:de\s+)?(\w+)?/i,
+      /(?:sport|foot|basket|tennis|gym|yoga|natation)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        if (match[1]) {
+          // Capitaliser le premier caractère
+          const subject = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+          if (text.includes('révision') || text.includes('revision')) {
+            return `Révision de ${subject}`;
+          } else if (text.includes('cours') || text.includes('classe')) {
+            return `Cours de ${subject}`;
+          } else if (text.includes('examen') || text.includes('exam')) {
+            return `Examen de ${subject}`;
+          }
+          return subject;
+        } else if (match[0]) {
+          // Retourner le mot trouvé capitalisé
+          return match[0].charAt(0).toUpperCase() + match[0].slice(1);
+        }
+      }
+    }
+  }
+
+  return 'Révision'; // Titre par défaut
+}
+
+/**
+ * Détecte le type d'événement à partir des messages
+ */
+function extractEventType(messages: ChatMessage[]): 'class' | 'exam' | 'study' | 'activity' {
+  for (let i = messages.length - 1; i >= 0 && i >= messages.length - 5; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'user') continue;
+
+    const text = msg.content.toLowerCase();
+
+    if (/examen|exam|contrôle|controle|ds|partiel/i.test(text)) return 'exam';
+    if (/cours|classe|td|tp|amphi/i.test(text)) return 'class';
+    if (/sport|foot|basket|tennis|gym|yoga|natation|match|entraînement/i.test(text)) return 'activity';
+    if (/révision|revision|étude|etude|travail/i.test(text)) return 'study';
+  }
+
+  return 'study'; // Type par défaut
+}
+
 export async function chatWithMistralHandler(
   req: AuthenticatedRequest,
   res: Response
@@ -239,28 +303,85 @@ export async function chatWithMistralHandler(
       // Vérifier que le message n'est pas vide
       let responseMessage = finalMessage.content || '';
 
-      // Si le message est vide, créer un message par défaut basé sur les tool calls
-      if (!responseMessage.trim()) {
-        console.log('[Chat] Message vide détecté, génération message par défaut');
+      // Si le message est vide OU contient une question de confirmation (bug), créer un message clair
+      const isConfirmationQuestion = /veux-tu|tu veux|je confirme|confirmes|d'accord\s*\?|ok\s*\?|¿quieres|confirmo/i.test(responseMessage);
 
-        // Créer un message par défaut selon le tool appelé
-        const toolName = assistantMessage.tool_calls[0]?.function?.name;
-        if (toolName === 'auto_place_event') {
-          const toolResult = toolResults[0];
+      if (!responseMessage.trim() || isConfirmationQuestion) {
+        console.log('[Chat] Message vide ou question de confirmation détectée, génération message explicite');
+
+        // Créer un message explicite selon le tool appelé
+        for (const toolCall of assistantMessage.tool_calls) {
+          const toolName = toolCall.function?.name;
+          const toolResult = toolResults.find((r: any) => r.tool_call_id === toolCall.id);
+
+          if (!toolResult) continue;
+
           try {
             const result = JSON.parse(toolResult.content);
-            if (result.success && result.placement) {
+
+            if (toolName === 'auto_place_event' && result.success && result.placement) {
+              const p = result.placement;
               responseMessage = userContext.language === 'es'
-                ? `Tu evento "${result.placement.dayName}" ha sido colocado el ${result.placement.dayName} de ${result.placement.startTime} a ${result.placement.endTime}. Calidad del horario: "${result.placement.slotQuality}".`
-                : `Ton événement "${result.placement.dayName}" a été placé ${result.placement.dayName} de ${result.placement.startTime} à ${result.placement.endTime}. Créneau de qualité "${result.placement.slotQuality}".`;
-            } else {
-              responseMessage = userContext.language === 'es' ? "El evento ha sido procesado." : "L'événement a été traité.";
+                ? `✅ ¡Hecho! **${p.title || 'Evento'}** colocado **${p.dayName} de ${p.startTime} a ${p.endTime}** 📅`
+                : `✅ C'est fait ! **${p.title || 'Événement'}** placé **${p.dayName} de ${p.startTime} à ${p.endTime}** 📅`;
+            } else if (toolName === 'add_event' && result.success) {
+              const events = result.events || [];
+              const count = events.length || result.count || 1;
+
+              if (events.length === 1) {
+                const e = events[0];
+                responseMessage = userContext.language === 'es'
+                  ? `✅ ¡Hecho! **${e.title}** añadido **${e.dayName} de ${e.startTime} a ${e.endTime}** 📅`
+                  : `✅ C'est fait ! **${e.title}** ajouté **${e.dayName} de ${e.startTime} à ${e.endTime}** 📅`;
+              } else if (events.length > 1) {
+                const eventList = events.map((e: any) =>
+                  `• **${e.title}** - ${e.dayName} ${e.startTime}-${e.endTime}`
+                ).join('\n');
+                responseMessage = userContext.language === 'es'
+                  ? `✅ ¡Perfecto! ${count} eventos añadidos:\n${eventList}`
+                  : `✅ Parfait ! ${count} événements ajoutés :\n${eventList}`;
+              } else {
+                responseMessage = userContext.language === 'es'
+                  ? `✅ ¡Evento añadido a tu calendario! 📅`
+                  : `✅ Événement ajouté à ton planning ! 📅`;
+              }
+            } else if (toolName === 'modify_event' && result.success) {
+              responseMessage = userContext.language === 'es'
+                ? `✅ ¡Evento modificado con éxito! ✏️`
+                : `✅ Événement modifié avec succès ! ✏️`;
+            } else if (toolName === 'delete_event' && result.success) {
+              responseMessage = userContext.language === 'es'
+                ? `✅ ¡Evento eliminado! 🗑️`
+                : `✅ Événement supprimé ! 🗑️`;
+            } else if (toolName === 'search_events' && result.success) {
+              const events = result.events || [];
+              if (events.length === 0) {
+                responseMessage = userContext.language === 'es'
+                  ? `📋 No encontré ningún evento que coincida.`
+                  : `📋 Je n'ai trouvé aucun événement correspondant.`;
+              } else {
+                const eventList = events.slice(0, 5).map((e: any) =>
+                  `• **${e.title}** - ${e.date} de ${e.startTime} à ${e.endTime}`
+                ).join('\n');
+                responseMessage = userContext.language === 'es'
+                  ? `📋 Encontré ${events.length} evento(s):\n${eventList}`
+                  : `📋 J'ai trouvé ${events.length} événement(s) :\n${eventList}`;
+              }
+            } else if (!result.success && result.error) {
+              responseMessage = userContext.language === 'es'
+                ? `❌ ${result.error}${result.suggestion ? `\n💡 ${result.suggestion}` : ''}`
+                : `❌ ${result.error}${result.suggestion ? `\n💡 ${result.suggestion}` : ''}`;
             }
           } catch (e) {
-            responseMessage = userContext.language === 'es' ? "El evento ha sido procesado." : "L'événement a été traité.";
+            console.error('[Chat] Erreur parsing tool result:', e);
           }
-        } else {
-          responseMessage = userContext.language === 'es' ? "Acción realizada con éxito." : "Action effectuée avec succès.";
+        }
+
+        // Si toujours pas de message, message par défaut
+        if (!responseMessage.trim()) {
+          responseMessage = userContext.language === 'es'
+            ? "✅ ¡Acción realizada!"
+            : "✅ Action effectuée !";
         }
       }
 
@@ -316,10 +437,18 @@ export async function chatWithMistralHandler(
       if (timeInfo) {
         console.log('[Chat] Horaire détecté:', timeInfo);
 
+        // Extraire le titre et le type intelligemment
+        const eventTitle = extractEventTitle(cleanedMessages);
+        const eventType = extractEventType(cleanedMessages);
+
         // Calculer la date de "demain"
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         const dateStr = tomorrow.toISOString().split('T')[0];
+        const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+        const dayName = dayNames[tomorrow.getDay()];
+
+        console.log(`[Chat] Création forcée: "${eventTitle}" (${eventType}) pour ${dayName}`);
 
         // Forcer l'appel à add_event
         const forcedToolCall = {
@@ -329,8 +458,8 @@ export async function chatWithMistralHandler(
             arguments: JSON.stringify({
               events: [
                 {
-                  title: 'Révision de mathématiques',
-                  type: 'study',
+                  title: eventTitle,
+                  type: eventType,
                   date: dateStr,
                   startTime: timeInfo.startTime,
                   endTime: timeInfo.endTime,
@@ -345,10 +474,13 @@ export async function chatWithMistralHandler(
 
         console.log('[Chat] Tool call forcé exécuté');
 
+        // Capitaliser le jour
+        const dayNameCap = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+
         return res.json({
           message: userContext.language === 'es'
-            ? `¡Listo! Revisión de matemáticas mañana de ${timeInfo.startTime} a ${timeInfo.endTime} 📚`
-            : `C'est fait ! Révision de maths demain de ${timeInfo.startTime} à ${timeInfo.endTime} 📚`,
+            ? `✅ ¡Hecho! **${eventTitle}** añadido **${dayNameCap} de ${timeInfo.startTime} a ${timeInfo.endTime}** 📅`
+            : `✅ C'est fait ! **${eventTitle}** ajouté **${dayNameCap} de ${timeInfo.startTime} à ${timeInfo.endTime}** 📅`,
           toolCalls: [forcedToolCall],
           success: true,
           rateLimitInfo: {
