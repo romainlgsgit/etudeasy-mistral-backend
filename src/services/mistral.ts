@@ -4,8 +4,8 @@
 
 export const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 
-// Choix du modèle - mistral-small-latest (meilleur function calling)
-export const MISTRAL_MODEL = 'mistral-small-latest';
+// Choix du modèle - mistral-large-latest (plus performant, meilleure compréhension)
+export const MISTRAL_MODEL = 'mistral-large-latest';
 
 // Modèle vision pour l'analyse d'images
 // pixtral-large-latest est plus puissant pour lire les documents techniques/denses
