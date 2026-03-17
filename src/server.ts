@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import dotenv from 'dotenv';
 import { chatWithMistralHandler } from './handlers/chatHandler';
+import { chatWithAgentHandler } from './handlers/agentHandler';
 import { generateExamHandler, evaluateAnswerHandler } from './handlers/examHandler';
 import { verifyFirebaseToken } from './middleware/auth';
 
@@ -68,8 +69,11 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
-// Route principale - Chat avec Mistral AI
+// Route principale - Chat avec Mistral AI (mode tool-calling)
 app.post('/chat', verifyFirebaseToken, chatWithMistralHandler);
+
+// Route Agent Mistral AI Studio (mode intelligent)
+app.post('/chat-agent', verifyFirebaseToken, chatWithAgentHandler);
 
 // Route pour générer des examens blancs
 app.post('/generate-exam', verifyFirebaseToken, generateExamHandler);
