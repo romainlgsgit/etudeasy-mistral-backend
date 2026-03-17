@@ -31,7 +31,14 @@ function getMondayOfCurrentWeek(): string {
 function fetchURL(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
-    const req = protocol.get(url, { timeout: 10000 }, (res) => {
+    const options = {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; EtudEasyBot/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+      },
+    };
+    const req = protocol.get(url, options, (res) => {
       // Suivre les redirections
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         fetchURL(res.headers.location).then(resolve).catch(reject);
