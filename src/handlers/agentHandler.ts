@@ -64,7 +64,7 @@ export async function chatWithAgentHandler(req: AuthenticatedRequest, res: Respo
       return;
     }
 
-    const data = await response.json();
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const content = data.choices?.[0]?.message?.content ?? '';
 
     console.log('[AgentHandler] Agent response received, length:', content.length);
