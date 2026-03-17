@@ -12,6 +12,7 @@ import dotenv from 'dotenv';
 import { chatWithMistralHandler } from './handlers/chatHandler';
 import { chatWithAgentHandler } from './handlers/agentHandler';
 import { generateExamHandler, evaluateAnswerHandler } from './handlers/examHandler';
+import { getDealsHandler } from './handlers/dealsHandler';
 import { verifyFirebaseToken } from './middleware/auth';
 
 // Charger les variables d'environnement
@@ -80,6 +81,9 @@ app.post('/generate-exam', verifyFirebaseToken, generateExamHandler);
 
 // Route pour évaluer une réponse textuelle
 app.post('/evaluate-answer', verifyFirebaseToken, evaluateAnswerHandler);
+
+// Route bons plans étudiants (publique - pas d'auth nécessaire)
+app.get('/deals', getDealsHandler);
 
 // Démarrer le serveur
 app.listen(PORT, () => {
